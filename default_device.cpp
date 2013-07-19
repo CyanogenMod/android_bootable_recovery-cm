@@ -61,6 +61,7 @@ class DefaultDevice : public Device {
                 return kHighlightUp;
 
               case KEY_ENTER:
+              case KEY_POWER:
                 return kInvokeItem;
             }
         }
