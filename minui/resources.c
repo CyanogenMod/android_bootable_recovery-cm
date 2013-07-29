@@ -33,7 +33,11 @@
 
 #include "minui.h"
 
+#ifdef SHARED_MINUI
+char *locale = NULL;
+#else
 extern char* locale;
+#endif
 
 // libpng gives "undefined reference to 'pow'" errors, and I have no
 // idea how to convince the build system to link with -lm.  We don't
