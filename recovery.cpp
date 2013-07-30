@@ -982,6 +982,7 @@ main(int argc, char **argv) {
         ui->SetBackground(RecoveryUI::ERROR);
     }
     if (status != INSTALL_SUCCESS || ui->IsTextVisible()) {
+        ui->ShowText(true);
         prompt_and_wait(device, status);
     }
 
