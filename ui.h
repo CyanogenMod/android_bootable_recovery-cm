@@ -107,6 +107,9 @@ class RecoveryUI {
     // statements will be displayed.
     virtual void EndMenu() = 0;
 
+    // Notify of volume state change
+    virtual void NotifyVolumesChanged();
+
 protected:
     void EnqueueKey(int key_code);
 
@@ -120,6 +123,7 @@ private:
     bool key_long_press;               // under key_queue_mutex
     int key_down_count;                // under key_queue_mutex
     int rel_sum;
+    int v_changed;
 
     typedef struct {
         RecoveryUI* ui;
@@ -133,6 +137,7 @@ private:
     static int input_callback(int fd, short revents, void* data);
     void process_key(int key_code, int updown);
     bool usb_connected();
+    bool VolumesChanged();
 
     static void* time_key_helper(void* cookie);
     void time_key(int key_code, int count);
