@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ifeq ($(WITH_SIMPLE_RECOVERY),true)
+
 LOCAL_PATH := $(call my-dir)
 
 
@@ -104,3 +106,6 @@ include $(LOCAL_PATH)/minui/Android.mk \
     $(LOCAL_PATH)/edify/Android.mk \
     $(LOCAL_PATH)/updater/Android.mk \
     $(LOCAL_PATH)/applypatch/Android.mk
+
+endif
+
