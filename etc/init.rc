@@ -42,15 +42,17 @@ service ueventd /sbin/ueventd
 
 service recovery /sbin/recovery
 
+service setup_adbd /sbin/setup_adbd
+    oneshot
+    disabled
+
 service adbd /sbin/adbd recovery
     disabled
 
-# Always start adbd on userdebug and eng builds
+# setup_adbd will start adb once it has checked the keys
 on property:ro.debuggable=1
-    write /sys/class/android_usb/android0/enable 1
-    start adbd
-
-# Restart adbd so it can run as root
+    start setup_adbd
+    
 on property:service.adb.root=1
     write /sys/class/android_usb/android0/enable 0
     restart adbd
