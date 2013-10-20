@@ -104,12 +104,20 @@ void ScreenRecoveryUI::draw_install_overlay_locked(int frame) {
             overlay_offset_x, overlay_offset_y);
 }
 
+#define C_BG        0,0,0
+#define C_MENU      0,153,204
+#define C_HEADER    111,111,111
+#define C_TOP       208,208,208
+#define C_LOG       76,76,76
+#define C_SELECTED  C_MENU
+#define C_HIGHLIGHT 60,60,61
+
 // Clear the screen and draw the currently selected background icon (if any).
 // Should only be called with updateMutex locked.
 void ScreenRecoveryUI::draw_background_locked(Icon icon)
 {
     pagesIdentical = false;
-    gr_color(0, 0, 0, 255);
+    gr_color(C_BG, 255);
     gr_fill(0, 0, gr_fb_width(), gr_fb_height());
 
     if (icon) {
@@ -156,7 +164,7 @@ void ScreenRecoveryUI::draw_progress_locked()
         int dy = (3*gr_fb_height() + iconHeight - 2*height)/4;
 
         // Erase behind the progress bar (in case this was a progress-only update)
-        gr_color(0, 0, 0, 255);
+        gr_color(C_BG, 255);
         gr_fill(dx, dy, width, height);
 
         if (progressBarType == DETERMINATE) {
@@ -196,10 +204,6 @@ void ScreenRecoveryUI::draw_progress_locked()
     }
 }
 
-#define C_HEADER  247,0,6
-#define C_MENU    0,106,157
-#define C_LOG     249,194,0
-
 // Redraw everything on the screen.  Does not flip pages.
 // Should only be called with updateMutex locked.
 void ScreenRecoveryUI::draw_screen_locked()
@@ -208,22 +212,23 @@ void ScreenRecoveryUI::draw_screen_locked()
     draw_progress_locked();
 
     if (show_text) {
-        gr_color(0, 0, 0, 160);
-        gr_fill(0, 0, gr_fb_width(), gr_fb_height());
-
         int y = 0;
         int i = 0;
         if (show_menu) {
-            gr_color(C_HEADER, 255);
+            if (y == 0)
+                gr_color(C_TOP, 255);
+            else
+                gr_color(C_HEADER, 255);
 
             for (; i < menu_top + menu_items; ++i) {
                 if (i == menu_top) gr_color(C_MENU, 255);
 
                 if (i == menu_top + menu_sel) {
+                    gr_color(C_HIGHLIGHT, 255);
                     // draw the highlight bar
                     gr_fill(0, y-2, gr_fb_width(), y+char_height+2);
-                    // white text of selected item
-                    gr_color(255, 255, 255, 255);
+                    // text of selected item
+                    gr_color(C_SELECTED, 255);
                     if (menu[i][0]) gr_text(4, y, menu[i], 1);
                     gr_color(C_MENU, 255);
                 } else {

@@ -446,7 +446,7 @@ copy_sideloaded_package(const char* original_path) {
 
 static const char**
 prepend_title(const char* const* headers) {
-    const char* title[] = { "Android system recovery <"
+    const char* title[] = { "CyanogenMod Simple Recovery <"
                             EXPAND(RECOVERY_API_VERSION) "e>",
                             "",
                             NULL };
