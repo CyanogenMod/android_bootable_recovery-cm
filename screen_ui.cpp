@@ -229,10 +229,10 @@ void ScreenRecoveryUI::draw_screen_locked()
                     gr_fill(0, y-2, gr_fb_width(), y+char_height+2);
                     // text of selected item
                     gr_color(C_SELECTED, 255);
-                    if (menu[i][0]) gr_text(4, y, menu[i], 1);
+                    if (menu[i][0]) gr_text2(4, y, menu[i], 1);
                     gr_color(C_MENU, 255);
                 } else {
-                    if (menu[i][0]) gr_text(4, y, menu[i], i < menu_top);
+                    if (menu[i][0]) gr_text2(4, y, menu[i], i < menu_top);
                 }
                 y += char_height+4;
             }
@@ -253,7 +253,7 @@ void ScreenRecoveryUI::draw_screen_locked()
         for (int ty = gr_fb_height() - char_height, count = 0;
              ty > y+2 && count < text_rows;
              ty -= char_height, ++count) {
-            gr_text(4, ty, text[row], 0);
+            gr_text2(4, ty, text[row], 0);
             --row;
             if (row < 0) row = text_rows-1;
         }
