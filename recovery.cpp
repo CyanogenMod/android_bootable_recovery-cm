@@ -911,10 +911,6 @@ int
 main(int argc, char **argv) {
     time_t start = time(NULL);
 
-    // If these fail, there's not really anywhere to complain...
-    freopen(TEMPORARY_LOG_FILE, "a", stdout); setbuf(stdout, NULL);
-    freopen(TEMPORARY_LOG_FILE, "a", stderr); setbuf(stderr, NULL);
-
     // If this binary is started with the single argument "--adbd",
     // instead of being the normal recovery binary, it turns into kind
     // of a stripped-down version of adbd that only supports the
@@ -941,6 +937,10 @@ main(int argc, char **argv) {
         }
         return busybox_driver(argc, argv);
     }
+
+    // If these fail, there's not really anywhere to complain...
+    freopen(TEMPORARY_LOG_FILE, "a", stdout); setbuf(stdout, NULL);
+    freopen(TEMPORARY_LOG_FILE, "a", stderr); setbuf(stderr, NULL);
 
     printf("Starting recovery on %s", ctime(&start));
 
