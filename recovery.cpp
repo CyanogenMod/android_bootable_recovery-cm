@@ -46,6 +46,9 @@ extern "C" {
 #include "minadbd/adb.h"
 }
 
+#define RESERVED_MEMORY_SIZE (sysconf(_SC_PAGESIZE) * 1024 * 5)
+#define GET_AVPHYS_MEM() ((long long)sysconf(_SC_AVPHYS_PAGES) * sysconf(_SC_PAGESIZE))
+
 struct selabel_handle *sehandle;
 
 static const struct option OPTIONS[] = {
@@ -601,6 +604,33 @@ static int compare_string(const void* a, const void* b) {
 }
 
 static int
+check_avphys_mem(const char *path) {
+    int fd;
+    int res;
+    struct stat buf;
+
+    fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        return -1;
+    }
+
+    res = fstat(fd, &buf);
+    if (res) {
+        close(fd);
+        return -1;
+    }
+
+    if (GET_AVPHYS_MEM() > (buf.st_size + RESERVED_MEMORY_SIZE)) {
+        res = 0;
+    } else {
+        res = -1;
+    }
+
+    close(fd);
+    return res;
+}
+
+static int
 update_directory(const char* path, const char* unmount_when_done,
                  int* wipe_cache, Device* device) {
     ensure_path_mounted(path);
@@ -703,15 +733,23 @@ update_directory(const char* path, const char* unmount_when_done,
 
             ui->Print("\n-- Install %s ...\n", path);
             set_sdcard_update_bootloader_message();
-            char* copy = copy_sideloaded_package(new_path);
-            if (unmount_when_done != NULL) {
-                ensure_path_unmounted(unmount_when_done);
-            }
-            if (copy) {
-                result = install_package(copy, wipe_cache, TEMPORARY_INSTALL_FILE);
-                free(copy);
+
+            if (!check_avphys_mem(new_path)) {
+                char* copy = copy_sideloaded_package(new_path);
+                if (unmount_when_done != NULL) {
+                    ensure_path_unmounted(unmount_when_done);
+                }
+                if (copy) {
+                    result = install_package(copy, wipe_cache, TEMPORARY_INSTALL_FILE);
+                    free(copy);
+                } else {
+                    result = INSTALL_ERROR;
+                }
             } else {
-                result = INSTALL_ERROR;
+                result = install_package(new_path, wipe_cache, TEMPORARY_INSTALL_FILE);
+                if (unmount_when_done != NULL) {
+                    ensure_path_unmounted(unmount_when_done);
+                }
             }
             break;
         }
