@@ -692,10 +692,9 @@ wipe_data(int confirm, Device* device) {
     ui->Print("Data wipe complete.\n");
 }
 
-static int enter_sideload_mode(int status) {
-    int wipe_cache = 0;
+static int enter_sideload_mode(int status, int* wipe_cache) {
     ensure_path_mounted(CACHE_ROOT);
-    status = apply_from_adb(ui, 0, TEMPORARY_INSTALL_FILE);
+    status = apply_from_adb(ui, wipe_cache, TEMPORARY_INSTALL_FILE);
     if (status >= 0) {
         if (status != INSTALL_SUCCESS) {
             ui->SetBackground(RecoveryUI::ERROR);
@@ -802,7 +801,7 @@ prompt_and_wait(Device* device, int status) {
                 break;
 
             case Device::APPLY_ADB_SIDELOAD:
-                status = enter_sideload_mode(status);
+                status = enter_sideload_mode(status, &wipe_cache);
                 break;
         }
     }
@@ -835,8 +834,8 @@ load_locale_from_cache() {
 static void
 setup_adbd() {
     struct stat f;
-    static char *key_src = "/data/misc/adb/adb_keys";
-    static char *key_dest = "/adb_keys";
+    const char *key_src = "/data/misc/adb/adb_keys";
+    const char *key_dest = "/adb_keys";
 
     // Mount /data and copy adb_keys to root if it exists
     ensure_path_mounted("/data");
@@ -1058,7 +1057,7 @@ main(int argc, char **argv) {
         if (wipe_cache && erase_volume("/cache")) status = INSTALL_ERROR;
         if (status != INSTALL_SUCCESS) ui->Print("Cache wipe failed.\n");
     } else if (sideload) {
-        status = enter_sideload_mode(status);
+        status = enter_sideload_mode(status, &wipe_cache);
     } else if (!just_exit) {
         status = INSTALL_NONE;  // No command specified
         ui->SetBackground(RecoveryUI::NO_COMMAND);
