@@ -46,6 +46,9 @@ extern "C" {
 #include "minadbd/adb.h"
 }
 
+#define RESERVED_MEMORY_SIZE (sysconf(_SC_PAGESIZE) * 1024 * 5)
+#define GET_AVPHYS_MEM() ((long long)sysconf(_SC_AVPHYS_PAGES) * sysconf(_SC_PAGESIZE))
+
 struct selabel_handle *sehandle;
 
 static const struct option OPTIONS[] = {
@@ -62,6 +65,7 @@ static const struct option OPTIONS[] = {
 
 #define LAST_LOG_FILE "/cache/recovery/last_log"
 
+static const char *CACHE_LOG_DIR = "/cache/recovery";
 static const char *COMMAND_FILE = "/cache/recovery/command";
 static const char *INTENT_FILE = "/cache/recovery/intent";
 static const char *LOG_FILE = "/cache/recovery/log";
@@ -75,6 +79,7 @@ static const char *SIDELOAD_TEMP_DIR = "/tmp/sideload";
 
 RecoveryUI* ui = NULL;
 char* locale = NULL;
+char recovery_version[PROPERTY_VALUE_MAX+1];
 
 /*
  * The recovery tool communicates with the main system through /cache files.
@@ -285,6 +290,19 @@ rotate_last_logs(int max) {
     }
 }
 
+static void
+copy_logs() {
+    // Copy logs to cache so the system can find out what happened.
+    copy_log_file(TEMPORARY_LOG_FILE, LOG_FILE, true);
+    copy_log_file(TEMPORARY_LOG_FILE, LAST_LOG_FILE, false);
+    copy_log_file(TEMPORARY_INSTALL_FILE, LAST_INSTALL_FILE, false);
+    chmod(LOG_FILE, 0600);
+    chown(LOG_FILE, 1000, 1000);   // system user
+    chmod(LAST_LOG_FILE, 0640);
+    chmod(LAST_INSTALL_FILE, 0644);
+    sync();
+}
+
 // clear the recovery command and prepare to boot a (hopefully working) system,
 // copy our log file to cache as well (for the system to read), and
 // record any intent we were asked to communicate back to the system.
@@ -314,14 +332,7 @@ finish_recovery(const char *send_intent) {
         check_and_fclose(fp, LOCALE_FILE);
     }
 
-    // Copy logs to cache so the system can find out what happened.
-    copy_log_file(TEMPORARY_LOG_FILE, LOG_FILE, true);
-    copy_log_file(TEMPORARY_LOG_FILE, LAST_LOG_FILE, false);
-    copy_log_file(TEMPORARY_INSTALL_FILE, LAST_INSTALL_FILE, false);
-    chmod(LOG_FILE, 0600);
-    chown(LOG_FILE, 1000, 1000);   // system user
-    chmod(LAST_LOG_FILE, 0640);
-    chmod(LAST_INSTALL_FILE, 0644);
+    copy_logs();
 
     // Reset to normal system boot so recovery won't cycle indefinitely.
     struct bootloader_message boot;
@@ -338,22 +349,95 @@ finish_recovery(const char *send_intent) {
     sync();  // For good measure.
 }
 
+typedef struct _saved_log_file {
+    char* name;
+    struct stat st;
+    unsigned char* data;
+    struct _saved_log_file* next;
+} saved_log_file;
+
 static int
 erase_volume(const char *volume) {
+    bool is_cache = (strcmp(volume, CACHE_ROOT) == 0);
+
     ui->SetBackground(RecoveryUI::ERASING);
     ui->SetProgressType(RecoveryUI::INDETERMINATE);
+
+    saved_log_file* head = NULL;
+
+    if (is_cache) {
+        // If we're reformatting /cache, we load any
+        // "/cache/recovery/last*" files into memory, so we can restore
+        // them after the reformat.
+
+        ensure_path_mounted(volume);
+
+        DIR* d;
+        struct dirent* de;
+        d = opendir(CACHE_LOG_DIR);
+        if (d) {
+            char path[PATH_MAX];
+            strcpy(path, CACHE_LOG_DIR);
+            strcat(path, "/");
+            int path_len = strlen(path);
+            while ((de = readdir(d)) != NULL) {
+                if (strncmp(de->d_name, "last", 4) == 0) {
+                    saved_log_file* p = (saved_log_file*) malloc(sizeof(saved_log_file));
+                    strcpy(path+path_len, de->d_name);
+                    p->name = strdup(path);
+                    if (stat(path, &(p->st)) == 0) {
+                        // truncate files to 512kb
+                        if (p->st.st_size > (1 << 19)) {
+                            p->st.st_size = 1 << 19;
+                        }
+                        p->data = (unsigned char*) malloc(p->st.st_size);
+                        FILE* f = fopen(path, "rb");
+                        fread(p->data, 1, p->st.st_size, f);
+                        fclose(f);
+                        p->next = head;
+                        head = p;
+                    } else {
+                        free(p);
+                    }
+                }
+            }
+            closedir(d);
+        } else {
+            if (errno != ENOENT) {
+                printf("opendir failed: %s\n", strerror(errno));
+            }
+        }
+    }
+
     ui->Print("Formatting %s...\n", volume);
 
     ensure_path_unmounted(volume);
+    int result = format_volume(volume);
 
-    if (strcmp(volume, "/cache") == 0) {
+    if (is_cache) {
+        while (head) {
+            FILE* f = fopen_path(head->name, "wb");
+            if (f) {
+                fwrite(head->data, 1, head->st.st_size, f);
+                fclose(f);
+                chmod(head->name, head->st.st_mode);
+                chown(head->name, head->st.st_uid, head->st.st_gid);
+            }
+            free(head->name);
+            free(head->data);
+            saved_log_file* temp = head->next;
+            free(head);
+            head = temp;
+        }
+
         // Any part of the log we'd copied to cache is now gone.
         // Reset the pointer so we copy from the beginning of the temp
         // log.
         tmplog_offset = 0;
+        copy_logs();
     }
 
-    return format_volume(volume);
+    return result;
 }
 
 static char*
@@ -448,21 +532,17 @@ copy_sideloaded_package(const char* original_path) {
 
 static const char**
 prepend_title(const char* const* headers) {
-    const char* title[] = { "CyanogenMod Simple Recovery <"
-                            EXPAND(RECOVERY_API_VERSION) "e>",
-                            "",
-                            NULL };
-
     // count the number of lines in our title, plus the
     // caller-provided headers.
-    int count = 0;
+    int count = 3;   // our title has 3 lines
     const char* const* p;
-    for (p = title; *p; ++p, ++count);
     for (p = headers; *p; ++p, ++count);
 
     const char** new_headers = (const char**)malloc((count+1) * sizeof(char*));
     const char** h = new_headers;
-    for (p = title; *p; ++p, ++h) *h = *p;
+    *(h++) = "CyanogenMod Simple Recovery <" EXPAND(RECOVERY_API_VERSION) "e>";
+    *(h++) = recovery_version;
+    *(h++) = "";
     for (p = headers; *p; ++p, ++h) *h = *p;
     *h = NULL;
 
@@ -523,6 +603,33 @@ get_menu_selection(const char* const * headers, const char* const * items,
 
 static int compare_string(const void* a, const void* b) {
     return strcmp(*(const char**)a, *(const char**)b);
+}
+
+static int
+check_avphys_mem(const char *path) {
+    int fd;
+    int res;
+    struct stat buf;
+
+    fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        return -1;
+    }
+
+    res = fstat(fd, &buf);
+    if (res) {
+        close(fd);
+        return -1;
+    }
+
+    if (GET_AVPHYS_MEM() > (buf.st_size + RESERVED_MEMORY_SIZE)) {
+        res = 0;
+    } else {
+        res = -1;
+    }
+
+    close(fd);
+    return res;
 }
 
 static int
@@ -628,15 +735,23 @@ update_directory(const char* path, const char* unmount_when_done,
 
             ui->Print("\n-- Install %s ...\n", path);
             set_sdcard_update_bootloader_message();
-            char* copy = copy_sideloaded_package(new_path);
-            if (unmount_when_done != NULL) {
-                ensure_path_unmounted(unmount_when_done);
-            }
-            if (copy) {
-                result = install_package(copy, wipe_cache, TEMPORARY_INSTALL_FILE);
-                free(copy);
+
+            if (!check_avphys_mem(new_path)) {
+                char* copy = copy_sideloaded_package(new_path);
+                if (unmount_when_done != NULL) {
+                    ensure_path_unmounted(unmount_when_done);
+                }
+                if (copy) {
+                    result = install_package(copy, wipe_cache, TEMPORARY_INSTALL_FILE);
+                    free(copy);
+                } else {
+                    result = INSTALL_ERROR;
+                }
             } else {
-                result = INSTALL_ERROR;
+                result = install_package(new_path, wipe_cache, TEMPORARY_INSTALL_FILE);
+                if (unmount_when_done != NULL) {
+                    ensure_path_unmounted(unmount_when_done);
+                }
             }
             break;
         }
@@ -752,10 +867,6 @@ prompt_and_wait(Device* device, int status) {
                 break;
 
             case Device::APPLY_EXT:
-                // Some packages expect /cache to be mounted (eg,
-                // standard incremental packages expect to use /cache
-                // as scratch space).
-                ensure_path_mounted(CACHE_ROOT);
                 status = update_directory(SDCARD_ROOT, SDCARD_ROOT, &wipe_cache, device);
                 if (status == INSTALL_SUCCESS && wipe_cache) {
                     ui->Print("\n-- Wiping cache (at package request)...\n");
@@ -802,6 +913,17 @@ prompt_and_wait(Device* device, int status) {
 
             case Device::APPLY_ADB_SIDELOAD:
                 status = enter_sideload_mode(status, &wipe_cache);
+                if (status >= 0) {
+                    if (status != INSTALL_SUCCESS) {
+                        ui->SetBackground(RecoveryUI::ERROR);
+                        ui->Print("Installation aborted.\n");
+                        copy_logs();
+                    } else if (!ui->IsTextVisible()) {
+                        return;  // reboot if logs aren't visible
+                    } else {
+                        ui->Print("\nInstall from ADB complete.\n");
+                    }
+                }
                 break;
         }
     }
@@ -945,7 +1067,7 @@ main(int argc, char **argv) {
 
     load_volume_table();
     ensure_path_mounted(LAST_LOG_FILE);
-    rotate_last_logs(5);
+    rotate_last_logs(10);
     get_args(&argc, &argv);
 
     int previous_runs = 0;
@@ -996,8 +1118,7 @@ main(int argc, char **argv) {
     sehandle = selabel_open(SELABEL_CTX_FILE, seopts, 1);
 
     if (!sehandle) {
-        fprintf(stderr, "Warning: No file_contexts\n");
-        ui->Print("Warning:  No file_contexts\n");
+        ui->Print("Warning: No file_contexts\n");
     }
 
     device->StartRecovery();
@@ -1025,6 +1146,7 @@ main(int argc, char **argv) {
     printf("\n");
 
     property_list(print_property, NULL);
+    property_get("ro.build.display.id", recovery_version, "");
     printf("\n");
 
     int status = INSTALL_SUCCESS;
@@ -1064,6 +1186,7 @@ main(int argc, char **argv) {
     }
 
     if (status == INSTALL_ERROR || status == INSTALL_CORRUPT) {
+        copy_logs();
         ui->SetBackground(RecoveryUI::ERROR);
     }
     if (status != INSTALL_SUCCESS || ui->IsTextVisible()) {
@@ -1074,6 +1197,6 @@ main(int argc, char **argv) {
     // Otherwise, get ready to boot the main system...
     finish_recovery(send_intent);
     ui->Print("Rebooting...\n");
-    android_reboot(ANDROID_RB_RESTART, 0, 0);
+    property_set(ANDROID_RB_PROPERTY, "reboot,");
     return EXIT_SUCCESS;
 }

@@ -2,6 +2,7 @@ import /init.recovery.${ro.hardware}.rc
 
 on early-init
     start ueventd
+    start healthd
 
 on init
     export PATH /sbin
@@ -37,7 +38,13 @@ on boot
 
     class_start default
 
+on property:sys.powerctl=*
+   powerctl ${sys.powerctl}
+
 service ueventd /sbin/ueventd
+    critical
+
+service healthd /sbin/healthd -n
     critical
 
 service recovery /sbin/recovery
@@ -48,6 +55,7 @@ service setup_adbd /sbin/setup_adbd
 
 service adbd /sbin/adbd recovery
     disabled
+    socket adbd stream 660 system system
 
 # setup_adbd will start adb once it has checked the keys
 on property:ro.debuggable=1

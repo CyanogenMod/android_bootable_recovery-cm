@@ -204,6 +204,30 @@ void ScreenRecoveryUI::draw_progress_locked()
     }
 }
 
+void ScreenRecoveryUI::SetColor(UIElement e) {
+    switch (e) {
+        case HEADER:
+            gr_color(247, 0, 6, 255);
+            break;
+        case MENU:
+        case MENU_SEL_BG:
+            gr_color(0, 106, 157, 255);
+            break;
+        case MENU_SEL_FG:
+            gr_color(255, 255, 255, 255);
+            break;
+        case LOG:
+            gr_color(249, 194, 0, 255);
+            break;
+        case TEXT_FILL:
+            gr_color(0, 0, 0, 160);
+            break;
+        default:
+            gr_color(255, 255, 255, 255);
+            break;
+    }
+}
+
 // Redraw everything on the screen.  Does not flip pages.
 // Should only be called with updateMutex locked.
 void ScreenRecoveryUI::draw_screen_locked()
@@ -221,11 +245,12 @@ void ScreenRecoveryUI::draw_screen_locked()
                 gr_color(C_HEADER, 255);
 
             for (; i < menu_top + menu_items; ++i) {
-                if (i == menu_top) gr_color(C_MENU, 255);
+                if (i == menu_top) SetColor(MENU);
 
                 if (i == menu_top + menu_sel) {
                     gr_color(C_HIGHLIGHT, 255);
                     // draw the highlight bar
+                    SetColor(MENU_SEL_BG);
                     gr_fill(0, y-2, gr_fb_width(), y+char_height+2);
                     // text of selected item
                     gr_color(C_SELECTED, 255);
@@ -236,14 +261,14 @@ void ScreenRecoveryUI::draw_screen_locked()
                 }
                 y += char_height+4;
             }
-            gr_color(C_MENU, 255);
+            SetColor(MENU);
             y += 4;
             gr_fill(0, y, gr_fb_width(), y+2);
             y += 4;
             ++i;
         }
 
-        gr_color(C_LOG, 255);
+        SetColor(LOG);
 
         // display from the bottom up, until we hit the top of the
         // screen, the bottom of the menu, or we've displayed the
@@ -451,10 +476,11 @@ void ScreenRecoveryUI::SetProgressType(ProgressType type)
     pthread_mutex_lock(&updateMutex);
     if (progressBarType != type) {
         progressBarType = type;
-        update_progress_locked();
     }
     progressScopeStart = 0;
+    progressScopeSize = 0;
     progress = 0;
+    update_progress_locked();
     pthread_mutex_unlock(&updateMutex);
 }
 
@@ -587,6 +613,13 @@ void ScreenRecoveryUI::ShowText(bool visible)
     pthread_mutex_lock(&updateMutex);
     show_text = visible;
     if (show_text) show_text_ever = 1;
+    update_screen_locked();
+    pthread_mutex_unlock(&updateMutex);
+}
+
+void ScreenRecoveryUI::Redraw()
+{
+    pthread_mutex_lock(&updateMutex);
     update_screen_locked();
     pthread_mutex_unlock(&updateMutex);
 }
