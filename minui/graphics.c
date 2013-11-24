@@ -264,7 +264,7 @@ void gr_font_size(int *x, int *y)
     *y = gr_font->cheight;
 }
 
-int gr_text2(int x, int y, const char *s, int bold)
+int gr_text(int x, int y, const char *s, int bold)
 {
     GGLContext *gl = gr_context;
     GRFont *font = gr_font;
@@ -294,11 +294,6 @@ int gr_text2(int x, int y, const char *s, int bold)
     }
 
     return x;
-}
-
-int gr_text(int x, int y, const char *s)
-{
-    return gr_text2(x, y, s, 0);
 }
 
 void gr_texticon(int x, int y, gr_surface icon) {
