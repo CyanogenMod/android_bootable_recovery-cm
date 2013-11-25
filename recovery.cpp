@@ -810,7 +810,9 @@ prompt_and_wait(Device* device, int status) {
                 break;
 
             case Device::APPLY_ADB_SIDELOAD:
-                status = enter_sideload_mode(status, &wipe_cache);
+                if (!ui->IsTextVisible()) {
+                    return;  // reboot if logs aren't visible
+                }
                 break;
         }
     }
