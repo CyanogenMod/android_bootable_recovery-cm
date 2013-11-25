@@ -913,16 +913,8 @@ prompt_and_wait(Device* device, int status) {
 
             case Device::APPLY_ADB_SIDELOAD:
                 status = enter_sideload_mode(status, &wipe_cache);
-                if (status >= 0) {
-                    if (status != INSTALL_SUCCESS) {
-                        ui->SetBackground(RecoveryUI::ERROR);
-                        ui->Print("Installation aborted.\n");
-                        copy_logs();
-                    } else if (!ui->IsTextVisible()) {
-                        return;  // reboot if logs aren't visible
-                    } else {
-                        ui->Print("\nInstall from ADB complete.\n");
-                    }
+                if (!ui->IsTextVisible()) {
+                    return;  // reboot if logs aren't visible
                 }
                 break;
         }
