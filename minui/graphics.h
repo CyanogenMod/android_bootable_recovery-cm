@@ -45,6 +45,9 @@ minui_backend* open_overlay();
 
 bool target_has_overlay();
 
+bool isTargetMdp5();
+void setDisplaySplit();
+
 #ifdef __cplusplus
 }
 #endif
