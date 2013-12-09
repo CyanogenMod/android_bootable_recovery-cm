@@ -104,20 +104,12 @@ void ScreenRecoveryUI::draw_install_overlay_locked(int frame) {
             overlay_offset_x, overlay_offset_y);
 }
 
-#define C_BG        0,0,0
-#define C_MENU      0,153,204
-#define C_HEADER    111,111,111
-#define C_TOP       208,208,208
-#define C_LOG       76,76,76
-#define C_SELECTED  C_MENU
-#define C_HIGHLIGHT 60,60,61
-
 // Clear the screen and draw the currently selected background icon (if any).
 // Should only be called with updateMutex locked.
 void ScreenRecoveryUI::draw_background_locked(Icon icon)
 {
     pagesIdentical = false;
-    gr_color(C_BG, 255);
+    SetColor(TEXT_FILL);
     gr_fill(0, 0, gr_fb_width(), gr_fb_height());
 
     if (icon) {
@@ -164,7 +156,7 @@ void ScreenRecoveryUI::draw_progress_locked()
         int dy = (3*gr_fb_height() + iconHeight - 2*height)/4;
 
         // Erase behind the progress bar (in case this was a progress-only update)
-        gr_color(C_BG, 255);
+        SetColor(TEXT_FILL);
         gr_fill(dx, dy, width, height);
 
         if (progressBarType == DETERMINATE) {
@@ -207,20 +199,23 @@ void ScreenRecoveryUI::draw_progress_locked()
 void ScreenRecoveryUI::SetColor(UIElement e) {
     switch (e) {
         case HEADER:
-            gr_color(247, 0, 6, 255);
+            gr_color(111,111,111,255);
+            break;
+        case TOP:
+            gr_color(208, 208, 208, 255);
             break;
         case MENU:
-        case MENU_SEL_BG:
-            gr_color(0, 106, 157, 255);
-            break;
         case MENU_SEL_FG:
-            gr_color(255, 255, 255, 255);
+            gr_color(0, 153, 204, 255);
+            break;
+        case MENU_SEL_BG:
+            gr_color(60, 60, 61, 255);
             break;
         case LOG:
-            gr_color(249, 194, 0, 255);
+            gr_color(76, 76, 76, 255);
             break;
         case TEXT_FILL:
-            gr_color(0, 0, 0, 160);
+            gr_color(0, 0, 0, 255);
             break;
         default:
             gr_color(255, 255, 255, 255);
@@ -240,22 +235,21 @@ void ScreenRecoveryUI::draw_screen_locked()
         int i = 0;
         if (show_menu) {
             if (y == 0)
-                gr_color(C_TOP, 255);
+                SetColor(TOP);
             else
-                gr_color(C_HEADER, 255);
+                SetColor(HEADER);
 
             for (; i < menu_top + menu_items; ++i) {
                 if (i == menu_top) SetColor(MENU);
 
                 if (i == menu_top + menu_sel) {
-                    gr_color(C_HIGHLIGHT, 255);
                     // draw the highlight bar
                     SetColor(MENU_SEL_BG);
                     gr_fill(0, y-2, gr_fb_width(), y+char_height+2);
                     // text of selected item
-                    gr_color(C_SELECTED, 255);
+                    SetColor(MENU_SEL_FG);
                     if (menu[i][0]) gr_text(4, y, menu[i], 1);
-                    gr_color(C_MENU, 255);
+                    SetColor(MENU);
                 } else {
                     if (menu[i][0]) gr_text(4, y, menu[i], i < menu_top);
                 }
