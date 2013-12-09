@@ -69,6 +69,8 @@ ScreenRecoveryUI::ScreenRecoveryUI() :
     menu_top(0),
     menu_items(0),
     menu_sel(0),
+    menu_show_start(0),
+    max_menu_rows(0),
 
     // These values are correct for the default image resources
     // provided with the android platform.  Devices which use
@@ -215,14 +217,22 @@ void ScreenRecoveryUI::draw_screen_locked()
         int y = 0;
         int i = 0;
         if (show_menu) {
-            if (y == 0)
-                gr_color(C_TOP, 255);
+            int row = 0;
+            gr_color(C_TOP, 255);
+            for (; i < menu_top; ++i) {
+                if (menu[i][0]) gr_text2(4, y, menu[i], i < menu_top);
+                y += char_height+4;
+                row++;
+            }
+
+            int j;
+            if (menu_items - menu_show_start + menu_top >= max_menu_rows)
+                j = max_menu_rows - menu_top;
             else
-                gr_color(C_HEADER, 255);
+                j = menu_items - menu_show_start;
 
-            for (; i < menu_top + menu_items; ++i) {
-                if (i == menu_top) gr_color(C_MENU, 255);
-
+            gr_color(C_MENU, 255);
+            for (i = menu_show_start + menu_top; i < (menu_show_start + menu_top + j); ++i) {
                 if (i == menu_top + menu_sel) {
                     gr_color(C_HIGHLIGHT, 255);
                     // draw the highlight bar
@@ -235,6 +245,9 @@ void ScreenRecoveryUI::draw_screen_locked()
                     if (menu[i][0]) gr_text2(4, y, menu[i], i < menu_top);
                 }
                 y += char_height+4;
+                row++;
+                if (row >= max_menu_rows)
+                    break;
             }
             gr_color(C_MENU, 255);
             y += 4;
@@ -354,6 +367,9 @@ void ScreenRecoveryUI::Init()
 
     text_col = text_row = 0;
     text_rows = gr_fb_height() / char_height;
+    max_menu_rows = text_rows - 10;
+    if (max_menu_rows > kMaxMenuRows)
+        max_menu_rows = kMaxMenuRows;
     if (text_rows > kMaxRows) text_rows = kMaxRows;
     text_top = 1;
 
@@ -528,7 +544,7 @@ void ScreenRecoveryUI::StartMenu(const char* const * headers, const char* const 
             menu[i][text_cols-1] = '\0';
         }
         menu_top = i;
-        for (; i < text_rows; ++i) {
+        for (; i < kMaxMenuRows; ++i) {
             if (items[i-menu_top] == NULL) break;
             strncpy(menu[i], items[i-menu_top], text_cols-1);
             menu[i][text_cols-1] = '\0';
@@ -547,8 +563,14 @@ int ScreenRecoveryUI::SelectMenu(int sel) {
     if (show_menu > 0) {
         old_sel = menu_sel;
         menu_sel = sel;
-        if (menu_sel < 0) menu_sel = 0;
-        if (menu_sel >= menu_items) menu_sel = menu_items-1;
+        if (menu_sel < 0) menu_sel = menu_items + menu_sel;
+        if (menu_sel >= menu_items) menu_sel = menu_sel - menu_items;
+        if (menu_sel < menu_show_start && menu_show_start > 0) {
+            menu_show_start = menu_sel;
+        }
+        if (menu_sel - menu_show_start + menu_top >= max_menu_rows) {
+            menu_show_start = menu_sel + menu_top - max_menu_rows + 1;
+        }
         sel = menu_sel;
         if (menu_sel != old_sel) update_screen_locked();
     }
