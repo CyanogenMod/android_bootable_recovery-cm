@@ -42,6 +42,8 @@ class DefaultUI : public ScreenRecoveryUI {
     }
 };
 
+extern int ui_root_menu;
+
 class DefaultDevice : public Device {
   public:
     DefaultDevice() :
@@ -53,17 +55,30 @@ class DefaultDevice : public Device {
     int HandleMenuKey(int key, int visible) {
         if (visible) {
             switch (key) {
+              case KEY_RIGHTSHIFT:
               case KEY_DOWN:
               case KEY_VOLUMEDOWN:
+              case KEY_MENU:
                 return kHighlightDown;
 
+              case KEY_LEFTSHIFT:
               case KEY_UP:
               case KEY_VOLUMEUP:
+              case KEY_SEARCH:
                 return kHighlightUp;
 
               case KEY_ENTER:
               case KEY_POWER:
+              case BTN_MOUSE:
+              case KEY_HOME:
+              case KEY_HOMEPAGE:
+              case KEY_SEND:
                 return kInvokeItem;
+
+              case KEY_BACKSPACE:
+              case KEY_BACK:
+                if (!ui_root_menu)
+                  return kGoBack;
             }
         }
 
