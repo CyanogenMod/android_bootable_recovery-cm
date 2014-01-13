@@ -270,6 +270,7 @@ LOCAL_STATIC_LIBRARIES := \
     libvoldclient \
     libmincrypt \
     libminui \
+    libminzip \
     libcutils \
     libstdc++ \
     libc
