@@ -1074,7 +1074,7 @@ main(int argc, char **argv) {
     int previous_runs = 0;
     const char *send_intent = NULL;
     const char *update_package = NULL;
-    int wipe_data = 0, wipe_cache = 0, show_text = 0, sideload = 0;
+    int wipe_data = 0, wipe_cache = 0, show_text = 1, sideload = 0;
     bool just_exit = false;
 
     int arg;
