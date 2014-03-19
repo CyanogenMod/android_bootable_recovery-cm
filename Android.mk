@@ -32,9 +32,11 @@ LOCAL_SRC_FILES := \
 # External tools
 LOCAL_SRC_FILES += \
 	../../system/core/toolbox/dynarray.c \
-	../../system/core/toolbox/getprop.c \
+    ../../system/core/toolbox/getprop.c \
     ../../system/core/toolbox/newfs_msdos.c \
-	../../system/core/toolbox/setprop.c \
+    ../../system/core/toolbox/setprop.c \
+    ../../system/core/toolbox/start.c \
+    ../../system/core/toolbox/stop.c \
     ../../system/core/toolbox/wipe.c \
     ../../system/vold/vdc.c
 
@@ -48,12 +50,12 @@ LOCAL_CFLAGS += -DRECOVERY_API_VERSION=$(RECOVERY_API_VERSION)
 
 LOCAL_STATIC_LIBRARIES := \
     libext4_utils_static \
-    libmake_ext4fs \
+    libmake_ext4fs_static \
+    libminizip_static \
     libsparse_static \
     libfsck_msdos \
     libminipigz \
-    libminizip \
-    libreboot \
+    libreboot_static \
     libvoldclient \
 	libsdcard \
     libminzip \
@@ -101,7 +103,7 @@ LOCAL_C_INCLUDES += system/extras/ext4_utils
 include $(BUILD_EXECUTABLE)
 
 # Symlinks
-RECOVERY_LINKS := busybox reboot setup_adbd vdc sdcard
+RECOVERY_LINKS := busybox getprop reboot sdcard setup_adbd setprop start stop vdc
 
 # nc is provided by external/netcat
 RECOVERY_SYMLINKS := $(addprefix $(TARGET_RECOVERY_ROOT_OUT)/sbin/,$(RECOVERY_LINKS))
@@ -126,6 +128,34 @@ $(RECOVERY_BUSYBOX_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
 	$(hide) ln -sf $(BUSYBOX_BINARY) $@
 
 ALL_DEFAULT_INSTALLED_MODULES += $(RECOVERY_BUSYBOX_SYMLINKS)
+
+# make_ext4fs
+include $(CLEAR_VARS)
+LOCAL_MODULE := libmake_ext4fs_static
+LOCAL_MODULE_TAGS := optional
+LOCAL_CFLAGS := -Dmain=make_ext4fs_main
+LOCAL_SRC_FILES := ../../system/extras/ext4_utils/make_ext4fs_main.c
+include $(BUILD_STATIC_LIBRARY)
+
+# Minizip static library
+include $(CLEAR_VARS)
+LOCAL_MODULE := libminizip_static
+LOCAL_MODULE_TAGS := optional
+LOCAL_CFLAGS := -Dmain=minizip_main -D__ANDROID__ -DIOAPI_NO_64
+LOCAL_C_INCLUDES := external/zlib
+LOCAL_SRC_FILES := \
+    ../../external/zlib/src/contrib/minizip/ioapi.c \
+    ../../external/zlib/src/contrib/minizip/minizip.c \
+    ../../external/zlib/src/contrib/minizip/zip.c
+include $(BUILD_STATIC_LIBRARY)
+
+# Reboot static library
+include $(CLEAR_VARS)
+LOCAL_MODULE := libreboot_static
+LOCAL_MODULE_TAGS := optional
+LOCAL_CFLAGS := -Dmain=reboot_main
+LOCAL_SRC_FILES := ../../system/core/reboot/reboot.c
+include $(BUILD_STATIC_LIBRARY)
 
 # All the APIs for testing
 include $(CLEAR_VARS)
