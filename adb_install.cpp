@@ -35,6 +35,7 @@ extern "C" {
 }
 
 static RecoveryUI* ui = NULL;
+static pthread_t sideload_thread;
 
 static void
 set_usb_driver(bool enabled) {
@@ -69,8 +70,31 @@ maybe_restart_adbd() {
     }
 }
 
-int
-apply_from_adb(RecoveryUI* ui_, int* wipe_cache, const char* install_file) {
+struct sideload_waiter_data {
+    pid_t child;
+};
+
+static struct sideload_waiter_data waiter;
+
+void *adb_sideload_thread(void* v) {
+    struct sideload_waiter_data* data = (struct sideload_waiter_data*)v;
+
+    int status;
+    waitpid(data->child, &status, 0);
+    LOGI("sideload process finished\n");
+
+    ui->CancelWaitKey();
+
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        LOGI("status %d\n", WEXITSTATUS(status));
+    }
+
+    LOGI("sideload thread finished\n");
+    return NULL;
+}
+
+void
+start_sideload(RecoveryUI* ui_) {
     ui = ui_;
 
     stop_adbd();
@@ -79,23 +103,24 @@ apply_from_adb(RecoveryUI* ui_, int* wipe_cache, const char* install_file) {
     ui->Print("\n\nNow send the package you want to apply\n"
               "to the device with \"adb sideload <filename>\"...\n");
 
-    pid_t child;
-    if ((child = fork()) == 0) {
+    if ((waiter.child = fork()) == 0) {
         execl("/sbin/recovery", "recovery", "--adbd", NULL);
         _exit(-1);
     }
-    int status;
-    // TODO(dougz): there should be a way to cancel waiting for a
-    // package (by pushing some button combo on the device).  For now
-    // you just have to 'adb sideload' a file that's not a valid
-    // package, like "/dev/null".
-    waitpid(child, &status, 0);
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        ui->Print("status %d\n", WEXITSTATUS(status));
-    }
+
+    pthread_create(&sideload_thread, NULL, &adb_sideload_thread, &waiter);
+}
+
+int
+apply_from_adb(int* wipe_cache, const char* install_file) {
 
     set_usb_driver(false);
     maybe_restart_adbd();
+
+    // kill the child
+    kill(waiter.child, SIGTERM);
+    pthread_join(sideload_thread, NULL);
+    ui->FlushKeys();
 
     struct stat st;
     if (stat(ADB_SIDELOAD_FILENAME, &st) != 0) {
@@ -106,5 +131,9 @@ apply_from_adb(RecoveryUI* ui_, int* wipe_cache, const char* install_file) {
         }
         return INSTALL_ERROR;
     }
-    return install_package(ADB_SIDELOAD_FILENAME, wipe_cache, install_file);
+
+    int install_status = install_package(ADB_SIDELOAD_FILENAME, wipe_cache, install_file);
+
+    remove(ADB_SIDELOAD_FILENAME);
+    return install_status;
 }
