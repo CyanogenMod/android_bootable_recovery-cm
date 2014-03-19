@@ -244,14 +244,10 @@ void   kick_transport( atransport*  t );
 #if ADB_HOST
 int get_available_local_transport_index();
 #endif
-int  init_socket_transport(atransport *t, int s, int port, int local);
 void init_usb_transport(atransport *t, usb_handle *usb, int state);
 
 /* for MacOS X cleanup */
 void close_usb_devices();
-
-/* cause new transports to be init'd and added to the list */
-void register_socket_transport(int s, const char *serial, int port, int local);
 
 /* these should only be used for the "adb disconnect" command */
 void unregister_transport(atransport *t);
@@ -409,6 +405,17 @@ extern int HOST;
 extern int SHELL_EXIT_NOTIFY_FD;
 
 #define CHUNK_SIZE (64*1024)
+
+#if !ADB_HOST
+#define USB_ADB_PATH     "/dev/android_adb"
+
+#define USB_FFS_ADB_PATH  "/dev/usb-ffs/adb/"
+#define USB_FFS_ADB_EP(x) USB_FFS_ADB_PATH#x
+
+#define USB_FFS_ADB_EP0   USB_FFS_ADB_EP(ep0)
+#define USB_FFS_ADB_OUT   USB_FFS_ADB_EP(ep1)
+#define USB_FFS_ADB_IN    USB_FFS_ADB_EP(ep2)
+#endif
 
 int sendfailmsg(int fd, const char *reason);
 int handle_host_request(char *service, transport_type ttype, char* serial, int reply_fd, asocket *s);

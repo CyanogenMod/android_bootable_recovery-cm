@@ -64,6 +64,7 @@ static const struct option OPTIONS[] = {
   { "just_exit", no_argument, NULL, 'x' },
   { "locale", required_argument, NULL, 'l' },
   { "sideload", no_argument, NULL, 'a' },
+  { "shutdown_after", no_argument, NULL, 'p' },
   { NULL, 0, NULL, 0 },
 };
 
@@ -183,11 +184,11 @@ get_args(int *argc, char ***argv) {
     get_bootloader_message(&boot);  // this may fail, leaving a zeroed structure
 
     if (boot.command[0] != 0 && boot.command[0] != 255) {
-        LOGI("Boot command: %.*s\n", sizeof(boot.command), boot.command);
+        LOGI("Boot command: %.*s\n", (int)sizeof(boot.command), boot.command);
     }
 
     if (boot.status[0] != 0 && boot.status[0] != 255) {
-        LOGI("Boot status: %.*s\n", sizeof(boot.status), boot.status);
+        LOGI("Boot status: %.*s\n", (int)sizeof(boot.status), boot.status);
     }
 
     // --- if arguments weren't supplied, look in the bootloader control block
@@ -1118,16 +1119,15 @@ main(int argc, char **argv) {
     rotate_last_logs(10);
     get_args(&argc, &argv);
 
-    int previous_runs = 0;
     const char *send_intent = NULL;
     const char *update_package = NULL;
     int wipe_data = 0, wipe_cache = 0, show_text = 1, sideload = 0;
     bool just_exit = false;
+    bool shutdown_after = false;
 
     int arg;
     while ((arg = getopt_long(argc, argv, "", OPTIONS, NULL)) != -1) {
         switch (arg) {
-        case 'p': previous_runs = atoi(optarg); break;
         case 's': send_intent = optarg; break;
         case 'u': update_package = optarg; break;
         case 'w': wipe_data = wipe_cache = 1; break;
@@ -1136,6 +1136,7 @@ main(int argc, char **argv) {
         case 'x': just_exit = true; break;
         case 'l': locale = optarg; break;
         case 'a': sideload = 1; break;
+        case 'p': shutdown_after = true; break;
         case '?':
             LOGE("Invalid command argument\n");
             continue;
@@ -1151,8 +1152,8 @@ main(int argc, char **argv) {
     ui = device->GetUI();
     gCurrentUI = ui;
 
-    ui->Init();
     ui->SetLocale(locale);
+    ui->Init();
     ui->SetBackground(RecoveryUI::NONE);
     if (show_text) ui->ShowText(true);
 
@@ -1249,5 +1250,12 @@ main(int argc, char **argv) {
 
     sync();
 
+    if (shutdown_after) {
+        ui->Print("Shutting down...\n");
+        property_set(ANDROID_RB_PROPERTY, "shutdown,");
+    } else {
+        ui->Print("Rebooting...\n");
+        property_set(ANDROID_RB_PROPERTY, "reboot,");
+    }
     return EXIT_SUCCESS;
 }

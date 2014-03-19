@@ -2,7 +2,7 @@ LOCAL_PATH := $(call my-dir)
 
 common_cflags :=
 
-common_src_files := graphics.c graphics_overlay.c events.c resources.c
+common_src_files := graphics.c graphics_fbdev.c events.c resources.c
 
 common_c_includes := \
     external/libpng\

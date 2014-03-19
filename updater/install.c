@@ -285,6 +285,40 @@ done:
     return StringValue(result);
 }
 
+Value* RenameFn(const char* name, State* state, int argc, Expr* argv[]) {
+    char* result = NULL;
+    if (argc != 2) {
+        return ErrorAbort(state, "%s() expects 2 args, got %d", name, argc);
+    }
+
+    char* src_name;
+    char* dst_name;
+
+    if (ReadArgs(state, argv, 2, &src_name, &dst_name) < 0) {
+        return NULL;
+    }
+    if (strlen(src_name) == 0) {
+        ErrorAbort(state, "src_name argument to %s() can't be empty", name);
+        goto done;
+    }
+    if (strlen(dst_name) == 0) {
+        ErrorAbort(state, "dst_name argument to %s() can't be empty",
+                   name);
+        goto done;
+    }
+
+    if (rename(src_name, dst_name) != 0) {
+        ErrorAbort(state, "Rename of %s() to %s() failed, error %s()",
+          src_name, dst_name, strerror(errno));
+    } else {
+        result = dst_name;
+    }
+
+done:
+    free(src_name);
+    if (result != dst_name) free(dst_name);
+    return StringValue(result);
+}
 
 Value* DeleteFn(const char* name, State* state, int argc, Expr* argv[]) {
     char** paths = malloc(argc * sizeof(char*));
@@ -522,88 +556,6 @@ Value* SymlinkFn(const char* name, State* state, int argc, Expr* argv[]) {
         return ErrorAbort(state, "%s: some symlinks failed", name);
     }
     return StringValue(strdup(""));
-}
-
-
-Value* SetPermFn(const char* name, State* state, int argc, Expr* argv[]) {
-    char* result = NULL;
-    bool recursive = (strcmp(name, "set_perm_recursive") == 0);
-
-    int min_args = 4 + (recursive ? 1 : 0);
-    if (argc < min_args) {
-        return ErrorAbort(state, "%s() expects %d+ args, got %d",
-                          name, min_args, argc);
-    }
-
-    char** args = ReadVarArgs(state, argc, argv);
-    if (args == NULL) return NULL;
-
-    char* end;
-    int i;
-    int bad = 0;
-
-    int uid = strtoul(args[0], &end, 0);
-    if (*end != '\0' || args[0][0] == 0) {
-        ErrorAbort(state, "%s: \"%s\" not a valid uid", name, args[0]);
-        goto done;
-    }
-
-    int gid = strtoul(args[1], &end, 0);
-    if (*end != '\0' || args[1][0] == 0) {
-        ErrorAbort(state, "%s: \"%s\" not a valid gid", name, args[1]);
-        goto done;
-    }
-
-    if (recursive) {
-        int dir_mode = strtoul(args[2], &end, 0);
-        if (*end != '\0' || args[2][0] == 0) {
-            ErrorAbort(state, "%s: \"%s\" not a valid dirmode", name, args[2]);
-            goto done;
-        }
-
-        int file_mode = strtoul(args[3], &end, 0);
-        if (*end != '\0' || args[3][0] == 0) {
-            ErrorAbort(state, "%s: \"%s\" not a valid filemode",
-                       name, args[3]);
-            goto done;
-        }
-
-        for (i = 4; i < argc; ++i) {
-            dirSetHierarchyPermissions(args[i], uid, gid, dir_mode, file_mode);
-        }
-    } else {
-        int mode = strtoul(args[2], &end, 0);
-        if (*end != '\0' || args[2][0] == 0) {
-            ErrorAbort(state, "%s: \"%s\" not a valid mode", name, args[2]);
-            goto done;
-        }
-
-        for (i = 3; i < argc; ++i) {
-            if (chown(args[i], uid, gid) < 0) {
-                printf("%s: chown of %s to %d %d failed: %s\n",
-                        name, args[i], uid, gid, strerror(errno));
-                ++bad;
-            }
-            if (chmod(args[i], mode) < 0) {
-                printf("%s: chmod of %s to %o failed: %s\n",
-                        name, args[i], mode, strerror(errno));
-                ++bad;
-            }
-        }
-    }
-    result = strdup("");
-
-done:
-    for (i = 0; i < argc; ++i) {
-        free(args[i]);
-    }
-    free(args);
-
-    if (bad) {
-        free(result);
-        return ErrorAbort(state, "%s: some changes failed", name);
-    }
-    return StringValue(result);
 }
 
 struct perm_parsed_args {
@@ -912,7 +864,7 @@ Value* FileGetPropFn(const char* name, State* state, int argc, Expr* argv[]) {
 
     buffer = malloc(st.st_size+1);
     if (buffer == NULL) {
-        ErrorAbort(state, "%s: failed to alloc %lld bytes", name, st.st_size+1);
+        ErrorAbort(state, "%s: failed to alloc %lld bytes", name, (long long)st.st_size+1);
         goto done;
     }
 
@@ -925,7 +877,7 @@ Value* FileGetPropFn(const char* name, State* state, int argc, Expr* argv[]) {
 
     if (fread(buffer, 1, st.st_size, f) != st.st_size) {
         ErrorAbort(state, "%s: failed to read %lld bytes from %s",
-                   name, st.st_size+1, filename);
+                   name, (long long)st.st_size+1, filename);
         fclose(f);
         goto done;
     }
@@ -1398,11 +1350,6 @@ void RegisterInstallFunctions() {
     RegisterFunction("package_extract_file", PackageExtractFileFn);
     RegisterFunction("symlink", SymlinkFn);
 
-    // Maybe, at some future point, we can delete these functions? They have been
-    // replaced by perm_set and perm_set_recursive.
-    RegisterFunction("set_perm", SetPermFn);
-    RegisterFunction("set_perm_recursive", SetPermFn);
-
     // Usage:
     //   set_metadata("filename", "key1", "value1", "key2", "value2", ...)
     // Example:
@@ -1425,6 +1372,7 @@ void RegisterInstallFunctions() {
 
     RegisterFunction("read_file", ReadFileFn);
     RegisterFunction("sha1_check", Sha1CheckFn);
+    RegisterFunction("rename", RenameFn);
 
     RegisterFunction("wipe_cache", WipeCacheFn);
 
