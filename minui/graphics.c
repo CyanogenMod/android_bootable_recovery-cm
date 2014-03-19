@@ -30,7 +30,7 @@
 
 #include <time.h>
 
-#include "font_10x18.h"
+#include "roboto_23x41.h"
 #include "minui.h"
 #include "graphics.h"
 
@@ -369,7 +369,13 @@ int gr_init(void)
         return -1;
     }
 
-    gr_backend = open_fbdev();
+#ifdef MSMFB_OVERLAY
+    if (target_has_overlay())
+        gr_backend = open_overlay();
+    else
+#endif
+        gr_backend = open_fbdev();
+
     gr_draw = gr_backend->init(gr_backend);
     if (gr_draw == NULL) {
         return -1;

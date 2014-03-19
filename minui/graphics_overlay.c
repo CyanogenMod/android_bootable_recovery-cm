@@ -42,30 +42,42 @@
 #include <linux/fb.h>
 #include <linux/kd.h>
 
-#ifdef QCOM_BSP
 #include <linux/msm_mdp.h>
 #include <linux/msm_ion.h>
-#endif
-
-#include <pixelflinger/pixelflinger.h>
 
 #include "minui.h"
+#include "graphics.h"
 
 #define MDP_V4_0 400
-
-#ifdef QCOM_BSP
+#define PIXEL_SIZE 4
 #define ALIGN(x, align) (((x) + ((align)-1)) & ~((align)-1))
+#define FB_PATH "/sys/class/graphics/fb0/name"
+
+static gr_surface overlay_init(minui_backend*);
+static gr_surface overlay_flip(minui_backend*);
+static void overlay_blank(minui_backend*, bool);
+static void overlay_exit(minui_backend*);
+
+static GRSurface gr_draw;
+static struct fb_var_screeninfo vi;
+static int fb_fd = -1;
+
+static minui_backend overlay_backend = {
+    .init = overlay_init,
+    .flip = overlay_flip,
+    .blank = overlay_blank,
+    .exit = overlay_exit,
+};
 
 typedef struct {
-    unsigned char *mem_buf;
     int size;
     int ion_fd;
     int mem_fd;
     struct ion_handle_data handle_data;
-} memInfo;
+} ion_mem_info;
 
 static int overlay_id = MSMFB_NEW_REQUEST;
-static memInfo mem_info;
+static ion_mem_info mem_info;
 
 static int map_mdp_pixel_format()
 {
@@ -77,42 +89,47 @@ static int map_mdp_pixel_format()
 #endif
     return format;
 }
-#endif // #ifdef QCOM_BSP
 
-static bool overlay_supported = false;
-
-bool target_has_overlay(char *version)
+bool target_has_overlay()
 {
-    int ret;
-    int mdp_version;
+    bool ret = false;
+    char version[32];
+    char str_ver[4];
+    int len = 0;
+    int fd = open(FB_PATH, O_RDONLY);
 
-    if (strlen(version) >= 8) {
+    if (fd < 0)
+        return false;
+
+    if ((len = read(fd, version, 31)) >= 0) {
+        version[len] = '\0';
+    }
+    close(fd);
+
+    if (len >= 8) {
         if(!strncmp(version, "msmfb", strlen("msmfb"))) {
-            char str_ver[4];
             memcpy(str_ver, version + strlen("msmfb"), 3);
             str_ver[3] = '\0';
-            mdp_version = atoi(str_ver);
-            if (mdp_version >= MDP_V4_0) {
-                overlay_supported = true;
+            if (atoi(str_ver) >= MDP_V4_0) {
+                ret = true;
             }
         } else if (!strncmp(version, "mdssfb", strlen("mdssfb"))) {
-            overlay_supported = true;
+            ret = true;
         }
     }
 
-    return overlay_supported;
+    return ret;
 }
 
-#ifdef QCOM_BSP
+minui_backend* open_overlay() {
+    return &overlay_backend;
+}
 
-int free_ion_mem(void) {
-    if (!overlay_supported)
-        return -EINVAL;
-
+static int free_ion_mem(void) {
     int ret = 0;
 
-    if (mem_info.mem_buf)
-        munmap(mem_info.mem_buf, mem_info.size);
+    if (gr_draw.data)
+        munmap(gr_draw.data, mem_info.size);
 
     if (mem_info.ion_fd >= 0) {
         ret = ioctl(mem_info.ion_fd, ION_IOC_FREE, &mem_info.handle_data);
@@ -131,10 +148,8 @@ int free_ion_mem(void) {
     return 0;
 }
 
-int alloc_ion_mem(unsigned int size)
+static int alloc_ion_mem(unsigned int size)
 {
-    if (!overlay_supported)
-        return -EINVAL;
     int result;
     struct ion_fd_data fd_data;
     struct ion_allocation_data ionAllocData;
@@ -167,12 +182,13 @@ int alloc_ion_mem(unsigned int size)
         free_ion_mem();
         return result;
     }
-    mem_info.mem_buf = (unsigned char *)mmap(NULL, size, PROT_READ |
+    gr_draw.data = (unsigned char *)mmap(NULL, size, PROT_READ |
                 PROT_WRITE, MAP_SHARED, fd_data.fd, 0);
     mem_info.mem_fd = fd_data.fd;
 
-    if (!mem_info.mem_buf) {
-        perror("ERROR: mem_buf MAP_FAILED ");
+
+    if (!gr_draw.data) {
+        perror("ERROR: ION MAP_FAILED ");
         free_ion_mem();
         return -ENOMEM;
     }
@@ -180,11 +196,8 @@ int alloc_ion_mem(unsigned int size)
     return 0;
 }
 
-int allocate_overlay(int fd, GGLSurface gr_fb[])
+static int allocate_overlay(int fd)
 {
-    if (!overlay_supported)
-        return -EINVAL;
-
     // Check if overlay is already allocated
     if (MSMFB_NEW_REQUEST == overlay_id) {
         struct mdp_overlay overlay;
@@ -194,13 +207,13 @@ int allocate_overlay(int fd, GGLSurface gr_fb[])
 
         /* Fill Overlay Data */
 
-        overlay.src.width  = ALIGN(gr_fb[0].width, 32);
-        overlay.src.height = gr_fb[0].height;
+        overlay.src.width  = ALIGN(gr_draw.width, 32);
+        overlay.src.height = gr_draw.height;
         overlay.src.format = map_mdp_pixel_format();
-        overlay.src_rect.w = gr_fb[0].width;
-        overlay.src_rect.h = gr_fb[0].height;
-        overlay.dst_rect.w = gr_fb[0].width;
-        overlay.dst_rect.h = gr_fb[0].height;
+        overlay.src_rect.w = gr_draw.width;
+        overlay.src_rect.h = gr_draw.height;
+        overlay.dst_rect.w = gr_draw.width;
+        overlay.dst_rect.h = gr_draw.height;
         overlay.alpha = 0xFF;
         overlay.transp_mask = MDP_TRANSP_NOP;
         overlay.id = MSMFB_NEW_REQUEST;
@@ -212,14 +225,12 @@ int allocate_overlay(int fd, GGLSurface gr_fb[])
 
         overlay_id = overlay.id;
     }
+
     return 0;
 }
 
-int free_overlay(int fd)
+static int free_overlay(int fd)
 {
-    if (!overlay_supported)
-        return -EINVAL;
-
     int ret = 0;
     struct mdp_display_commit ext_commit;
 
@@ -246,10 +257,8 @@ int free_overlay(int fd)
     return 0;
 }
 
-int overlay_display_frame(int fd, GGLubyte* data, size_t size)
+static int overlay_display_frame(int fd, size_t size)
 {
-    if (!overlay_supported)
-        return -EINVAL;
     int ret = 0;
     struct msmfb_overlay_data ovdata;
     struct mdp_display_commit ext_commit;
@@ -258,8 +267,6 @@ int overlay_display_frame(int fd, GGLubyte* data, size_t size)
         perror("display_frame failed, no overlay\n");
         return -EINVAL;
     }
-
-    memcpy(mem_info.mem_buf, data, size);
 
     memset(&ovdata, 0, sizeof(struct msmfb_overlay_data));
 
@@ -283,30 +290,85 @@ int overlay_display_frame(int fd, GGLubyte* data, size_t size)
     return ret;
 }
 
-#else
-
-int free_ion_mem(void) {
-    return -EINVAL;
-}
-
-int alloc_ion_mem(unsigned int size)
+static gr_surface overlay_init(minui_backend* backend)
 {
-    return -EINVAL;
+    int fd;
+    void *bits = NULL;
+
+    struct fb_fix_screeninfo fi;
+
+    fd = open("/dev/graphics/fb0", O_RDWR);
+    if (fd < 0) {
+        perror("cannot open fb0");
+        return NULL;
+    }
+
+    if (ioctl(fd, FBIOGET_FSCREENINFO, &fi) < 0) {
+        perror("failed to get fb0 info");
+        close(fd);
+        return NULL;
+    }
+
+    if (ioctl(fd, FBIOGET_VSCREENINFO, &vi) < 0) {
+        perror("failed to get fb0 info");
+        close(fd);
+        return NULL;
+    }
+
+    printf("fb0 reports (possibly inaccurate):\n"
+           "  vi.bits_per_pixel = %d\n"
+           "  vi.red.offset   = %3d   .length = %3d\n"
+           "  vi.green.offset = %3d   .length = %3d\n"
+           "  vi.blue.offset  = %3d   .length = %3d\n",
+           vi.bits_per_pixel,
+           vi.red.offset, vi.red.length,
+           vi.green.offset, vi.green.length,
+           vi.blue.offset, vi.blue.length);
+
+    fi.line_length = ALIGN(vi.xres, 32) * PIXEL_SIZE;
+
+    gr_draw.width = vi.xres;
+    gr_draw.height = vi.yres;
+    gr_draw.row_bytes = fi.line_length;
+    gr_draw.pixel_bytes = vi.bits_per_pixel / 8;
+
+    fb_fd = fd;
+
+    printf("overlay: %d (%d x %d)\n", fb_fd, gr_draw.width, gr_draw.height);
+
+    overlay_blank(backend, true);
+    overlay_blank(backend, false);
+
+    if (alloc_ion_mem(fi.line_length * vi.yres) || allocate_overlay(fb_fd))
+        free_ion_mem();
+
+    return &gr_draw;
 }
 
-int allocate_overlay(int fd, GGLSurface gr_fb[])
+static gr_surface overlay_flip(minui_backend* backend __unused)
 {
-    return -EINVAL;
+    if (overlay_display_frame(fb_fd, (gr_draw.row_bytes * gr_draw.height)) < 0) {
+        // Free and allocate overlay in failure case
+        // so that next cycle can be retried
+        free_overlay(fb_fd);
+        allocate_overlay(fb_fd);
+    }
+    return &gr_draw;
 }
 
-int free_overlay(int fd)
-{
-    return -EINVAL;
+static void overlay_blank(minui_backend* backend __unused, bool blank) {
+    if (blank)
+        free_overlay(fb_fd);
+
+    ioctl(fb_fd, FBIOBLANK, blank ? FB_BLANK_POWERDOWN : FB_BLANK_UNBLANK);
+
+    if (!blank)
+        allocate_overlay(fb_fd);
 }
 
-int overlay_display_frame(int fd, GGLubyte* data, size_t size)
-{
-    return -EINVAL;
+static void overlay_exit(minui_backend* backend __unused) {
+    free_overlay(fb_fd);
+    free_ion_mem();
+    close(fb_fd);
+    fb_fd = -1;
 }
-
-#endif //#ifdef QCOM_BSP

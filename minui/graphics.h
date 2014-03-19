@@ -41,6 +41,9 @@ typedef struct minui_backend {
 } minui_backend;
 
 minui_backend* open_fbdev();
+minui_backend* open_overlay();
+
+bool target_has_overlay();
 
 #ifdef __cplusplus
 }
