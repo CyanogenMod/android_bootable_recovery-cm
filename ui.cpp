@@ -237,6 +237,11 @@ void RecoveryUI::process_swipe(int fd, struct input_event *ev) {
 
     if(ev->type == EV_SYN) {
         //Print("x=%d y=%d dx=%d dy=%d\n", diff_x, diff_y, min_x_swipe_px, min_y_swipe_px);
+        if (in_touch == 0 && ev->code == SYN_MT_REPORT) {
+            reset_gestures();
+            return;
+        }
+        in_touch = 0;
         if(diff_y > min_y_swipe_px) {
             EnqueueKey(KEY_VOLUMEDOWN);
             reset_gestures();
@@ -249,10 +254,11 @@ void RecoveryUI::process_swipe(int fd, struct input_event *ev) {
         } else if(diff_x < -min_x_swipe_px) {
             EnqueueKey(KEY_BACK);
             reset_gestures();
-       }
+        }
 
     } else if(ev->type == EV_ABS && ev->code == ABS_MT_POSITION_X) {
 
+        in_touch = 1;
         old_x = touch_x;
         float touch_x_rel = (float)ev->value / (float)self->max_x_touch;
         touch_x = touch_x_rel * gr_fb_width();
@@ -260,6 +266,8 @@ void RecoveryUI::process_swipe(int fd, struct input_event *ev) {
         if(old_x != 0) diff_x += touch_x - old_x;
 
     } else if(ev->type == EV_ABS && ev->code == ABS_MT_POSITION_Y) {
+
+        in_touch = 1;
         old_y = touch_y;
         float touch_y_rel = (float)ev->value / (float)self->max_y_touch;
         touch_y = touch_y_rel * gr_fb_height();
