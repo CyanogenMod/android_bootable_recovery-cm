@@ -210,8 +210,8 @@ void RecoveryUI::set_min_swipe_lengths() {
     property_get("ro.sf.lcd_density", value, "0");
     int screen_density = atoi(value);
     if(screen_density > 0) {
-        min_x_swipe_px = (int)(0.35 * screen_density); // Roughly 0.5in
-        min_y_swipe_px = (int)(0.20 * screen_density); // Roughly 0.3in
+        min_x_swipe_px = (int)(0.5 * screen_density); // Roughly 0.5in
+        min_y_swipe_px = (int)(0.3 * screen_density); // Roughly 0.3in
     }
 }
 
