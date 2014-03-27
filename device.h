@@ -85,6 +85,8 @@ class Device {
     static const int kInvokeItem = -4;
     static const int kGoBack = -5;
     static const int kRefresh = -6;
+    static const int kAbsStart = -512;
+    static const int kAbsEnd = -257;
     
     // Called when we do a wipe data/factory reset operation (either via a
     // reboot from the main system with the --wipe_data flag, or when the

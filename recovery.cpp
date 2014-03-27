@@ -611,6 +611,10 @@ get_menu_selection(const char* const * headers, const char* const * items,
                 case Device::kRefresh:
                     chosen_item = Device::kRefresh;
                     break;
+                default:
+                    if (action >= Device::kAbsStart && action <= Device::kAbsEnd) {
+                        chosen_item = action - Device::kAbsStart;
+                    }
             }
         } else if (!menu_only) {
             chosen_item = action;
