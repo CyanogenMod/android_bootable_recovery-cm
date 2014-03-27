@@ -12,9 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ifeq ($(WITH_SIMPLE_RECOVERY),true)
-
 LOCAL_PATH := $(call my-dir)
+
+ifeq ($(RECOVERY_VARIANT),)
+ifeq ($(LOCAL_PATH),bootable/recovery)
+RECOVERY_VARIANT := cm
+endif
+endif
+
+ifeq ($(RECOVERY_VARIANT),cm)
 
 include $(CLEAR_VARS)
 
