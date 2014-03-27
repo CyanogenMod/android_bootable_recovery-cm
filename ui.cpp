@@ -45,6 +45,122 @@
 
 #define UI_WAIT_KEY_TIMEOUT_SEC    120
 
+/* Some extra input defines */
+#ifndef ABS_MT_ANGLE
+#define ABS_MT_ANGLE 0x38
+#endif
+
+#define DEBUG_TOUCH_EVENTS
+
+static void show_event(int fd, struct input_event *ev)
+{
+#ifdef DEBUG_TOUCH_EVENTS
+    char typebuf[40];
+    char codebuf[40];
+    const char *evtypestr = NULL;
+    const char *evcodestr = NULL;
+
+    sprintf(typebuf, "0x%04x", ev->type);
+    evtypestr = typebuf;
+
+    sprintf(codebuf, "0x%04x", ev->code);
+    evcodestr = codebuf;
+
+    switch (ev->type) {
+    case EV_SYN:
+        evtypestr = "EV_SYN";
+        switch (ev->code) {
+        case SYN_REPORT:
+            evcodestr = "SYN_REPORT";
+            break;
+        case SYN_MT_REPORT:
+            evcodestr = "SYN_MT_REPORT";
+            break;
+        }
+        break;
+    case EV_KEY:
+        evtypestr = "EV_KEY";
+        switch (ev->code) {
+        case KEY_HOME: /* 102 */
+            evcodestr = "KEY_HOME";
+            break;
+        case KEY_POWER: /* 116 */
+            evcodestr = "KEY_POWER";
+            break;
+        case KEY_MENU: /* 139 */
+            evcodestr = "KEY_MENU";
+            break;
+        case KEY_BACK: /* 158 */
+            evcodestr = "KEY_BACK";
+            break;
+        case KEY_HOMEPAGE: /* 172 */
+            evcodestr = "KEY_HOMEPAGE";
+            break;
+        case KEY_SEARCH: /* 217 */
+            evcodestr = "KEY_SEARCH";
+            break;
+        case BTN_TOOL_FINGER: /* 0x145 */
+            evcodestr = "BTN_TOOL_FINGER";
+            break;
+        case BTN_TOUCH: /* 0x14a */
+            evcodestr = "BTN_TOUCH";
+            break;
+        }
+        break;
+    case EV_REL:
+        evtypestr = "EV_REL";
+        switch (ev->code) {
+        case REL_X:
+            evcodestr = "REL_X";
+            break;
+        case REL_Y:
+            evcodestr = "REL_Y";
+            break;
+        case REL_Z:
+            evcodestr = "REL_Z";
+            break;
+        }
+        break;
+    case EV_ABS:
+        evtypestr = "EV_ABS";
+        switch (ev->code) {
+        case ABS_MT_TOUCH_MAJOR:
+            evcodestr = "ABS_MT_TOUCH_MAJOR";
+            break;
+        case ABS_MT_TOUCH_MINOR:
+            evcodestr = "ABS_MT_TOUCH_MINOR";
+            break;
+        case ABS_MT_WIDTH_MAJOR:
+            evcodestr = "ABS_MT_WIDTH_MAJOR";
+            break;
+        case ABS_MT_WIDTH_MINOR:
+            evcodestr = "ABS_MT_WIDTH_MINOR";
+            break;
+        case ABS_MT_ORIENTATION:
+            evcodestr = "ABS_MT_ORIGENTATION";
+            break;
+        case ABS_MT_POSITION_X:
+            evcodestr = "ABS_MT_POSITION_X";
+            break;
+        case ABS_MT_POSITION_Y:
+            evcodestr = "ABS_MT_POSITION_Y";
+            break;
+        case ABS_MT_TRACKING_ID:
+            evcodestr = "ABS_MT_TRACKING_ID";
+            break;
+        case ABS_MT_PRESSURE:
+            evcodestr = "ABS_MT_PRESSURE";
+            break;
+        case ABS_MT_ANGLE:
+            evcodestr = "ABS_MT_ANGLE";
+            break;
+        }
+        break;
+    }
+    LOGI("show_event: fd=%d, type=%s, code=%s, val=%d\n", fd, evtypestr, evcodestr, ev->value);
+#endif
+}
+
 // There's only (at most) one of these objects, and global callbacks
 // (for pthread_create, and the input event system) need to find it,
 // so use a global variable.
@@ -123,6 +239,24 @@ static int message_socket_listen_event(int fd, short revents, void *data)
     return 0;
 }
 
+static char* read_vkey(char* p, vkey* k) {
+    int val[6];
+    int n;
+    for (n = 0; *p && n < 6; ++n) {
+        val[n] = strtol(p, NULL, 0);
+        char* q = strchr(p, ':');
+        p = (q ? q+1 : p+strlen(p));
+    }
+    if (n != 6 || val[0] != 0x01)
+        return NULL;
+    k->keycode = val[1];
+    k->min.x = val[2] - val[4]/2;
+    k->min.y = val[3] - val[5]/2;
+    k->max.x = val[2] + val[4]/2;
+    k->max.y = val[3] + val[5]/2;
+    return p;
+}
+
 RecoveryUI::RecoveryUI() :
     key_queue_len(0),
     key_last_down(-1),
@@ -130,26 +264,15 @@ RecoveryUI::RecoveryUI() :
     key_down_count(0),
     consecutive_power_keys(0),
     consecutive_alternate_keys(0),
-    last_key(-1),
-    in_touch(0),
-    touch_x(0),
-    touch_y(0),
-    old_x(0),
-    old_y(0),
-    diff_x(0),
-    diff_y(0),
-    min_x_swipe_px(100),
-    min_y_swipe_px(80),
-    max_x_touch(0),
-    max_y_touch(0),
-    mt_count(0) {
+    last_key(-1) {
     pthread_mutex_init(&key_queue_mutex, NULL);
     pthread_cond_init(&key_queue_cond, NULL);
+
     self = this;
 }
 
 void RecoveryUI::Init() {
-    set_min_swipe_lengths();
+    calibrate_swipe();
     ev_init(input_callback, NULL);
     message_socket.ServerInit();
     ev_add_fd(message_socket.fd(), message_socket_listen_event, &message_socket);
@@ -166,33 +289,48 @@ int RecoveryUI::input_callback(int fd, short revents, void* data)
     if (ret)
         return -1;
 
-    self->process_swipe(fd, &ev);
+    show_event(fd, &ev);
 
-    if (ev.type == EV_SYN) {
-        return 0;
-    } else if (ev.type == EV_REL) {
-        if (ev.code == REL_Y) {
-            // accumulate the up or down motion reported by
-            // the trackball.  When it exceeds a threshold
-            // (positive or negative), fake an up/down
-            // key event.
-            self->rel_sum += ev.value;
-            if (self->rel_sum > 3) {
-                self->process_key(KEY_DOWN, 1);   // press down key
-                self->process_key(KEY_DOWN, 0);   // and release it
-                self->rel_sum = 0;
-            } else if (self->rel_sum < -3) {
-                self->process_key(KEY_UP, 1);     // press up key
-                self->process_key(KEY_UP, 0);     // and release it
-                self->rel_sum = 0;
-            }
+    input_device* dev = NULL;
+    int n;
+    for (n = 0; n < MAX_NR_INPUT_DEVICES; ++n) {
+        if (self->input_devices[n].fd == fd) {
+            dev = &self->input_devices[n];
+            break;
         }
-    } else {
-        self->rel_sum = 0;
+        if (self->input_devices[n].fd == -1) {
+            dev = &self->input_devices[n];
+            memset(dev, 0, sizeof(input_device));
+            dev->fd = fd;
+            dev->tracking_id = -1;
+            self->calibrate_touch(dev);
+            self->setup_vkeys(dev);
+            break;
+        }
+    }
+    if (!dev) {
+        LOGE("input_callback: no more available input devices\n");
+        return -1;
     }
 
-    if (ev.type == EV_KEY && ev.code <= KEY_MAX)
-        self->process_key(ev.code, ev.value);
+    if (ev.type != EV_REL) {
+        dev->rel_sum = 0;
+    }
+
+    switch (ev.type) {
+    case EV_SYN:
+        self->process_syn(dev, ev.code, ev.value);
+        break;
+    case EV_ABS:
+        self->process_abs(dev, ev.code, ev.value);
+        break;
+    case EV_REL:
+        self->process_rel(dev, ev.code, ev.value);
+        break;
+    case EV_KEY:
+        self->process_key(dev, ev.code, ev.value);
+        break;
+    }
 
     return 0;
 }
@@ -209,9 +347,12 @@ int RecoveryUI::input_callback(int fd, short revents, void* data)
 // a key is registered.
 //
 // updown == 1 for key down events; 0 for key up events
-void RecoveryUI::process_key(int key_code, int updown) {
+void RecoveryUI::process_key(input_device* dev, int key_code, int updown) {
     bool register_key = false;
     bool long_press = false;
+
+    if (key_code > KEY_MAX)
+        return;
 
     pthread_mutex_lock(&key_queue_mutex);
     key_pressed[key_code] = updown;
@@ -264,6 +405,134 @@ void RecoveryUI::process_key(int key_code, int updown) {
     }
 }
 
+void RecoveryUI::process_syn(input_device* dev, int code, int value) {
+    /*
+     * Type A device release:
+     *   1. Lack of position update
+     *   2. BTN_TOUCH | ABS_PRESSURE | SYN_MT_REPORT
+     *   3. SYN_REPORT
+     *
+     * Type B device release:
+     *   1. ABS_MT_TRACKING_ID == -1 for "first" slot
+     *   2. SYN_REPORT
+     */
+
+    if (code == SYN_MT_REPORT) {
+        dev->saw_mt_report = true;
+        return;
+    }
+    if (code == SYN_REPORT) {
+        if (dev->in_touch) {
+            printf(" .. in_touch\n");
+
+            /* Detect release */
+            if (dev->saw_mt_report && !dev->saw_pos_x && !dev->saw_pos_y) {
+                /* type A release */
+                printf("  type a release\n");
+                if (dev->in_touch) {
+                    handle_release(dev);
+                }
+                dev->in_touch = false;
+                dev->in_swipe = false;
+                dev->slot_first = 0;
+            }
+            else if (dev->slot_current == dev->slot_first &&
+                    dev->tracking_id == -1) {
+                /* type B release */
+                printf("  type b release\n");
+                if (dev->in_touch) {
+                    handle_release(dev);
+                }
+                dev->in_touch = false;
+                dev->in_swipe = false;
+                dev->slot_first = 0;
+            }
+        }
+        else {
+            printf(" .. not in_touch\n");
+            handle_press(dev);
+            dev->in_touch = true;
+        }
+
+        handle_gestures(dev);
+
+        dev->saw_pos_x = dev->saw_pos_y = dev->saw_mt_report = false;
+    }
+}
+
+void RecoveryUI::process_abs(input_device* dev, int code, int value) {
+    if (code == ABS_MT_SLOT) {
+        printf("slot: first=%d, cur=%d, val=%d\n", dev->slot_first, dev->slot_current, value);
+        dev->slot_current = value;
+        if (dev->slot_first == -1) {
+            dev->slot_first = value;
+        }
+        return;
+    }
+    if (code == ABS_MT_TRACKING_ID) {
+        if (value != dev->tracking_id) {
+            dev->tracking_id = value;
+            if (dev->tracking_id < 0) {
+                dev->slot_nr_active--;
+            }
+            else {
+                dev->slot_nr_active++;
+            }
+            printf("tracking id %d, active %d\n", dev->tracking_id, dev->slot_nr_active);
+        }
+        return;
+    }
+    /*
+     * For type A devices, we "lock" onto the first coordinates by ignoring
+     * position updates from the time we see a SYN_MT_REPORT until the next
+     * SYN_REPORT
+     *
+     * For type B devices, we "lock" onto the first slot seen until all slots
+     * are released
+     */
+    if (dev->slot_nr_active == 0) {
+        /* type A */
+        if (dev->saw_pos_x && dev->saw_pos_y) {
+            return;
+        }
+    }
+    else {
+        if (dev->slot_current != dev->slot_first) {
+printf("ignoring event, curslot=%d, firstslot=%d\n", dev->slot_current, dev->slot_first);
+            return;
+        }
+    }
+    if (code == ABS_MT_POSITION_X) {
+        dev->saw_pos_x = true;
+        dev->touch_pos.x = value * fb_dimensions.x / (dev->touch_max.x - dev->touch_min.x);
+        printf("process_abs: pos_x: value=%d, dim.x=%d, max.x=%d, min.x=%d -> %d\n", value, fb_dimensions.x, dev->touch_max.x, dev->touch_min.x, dev->touch_pos.x);
+    }
+    else if (code == ABS_MT_POSITION_Y) {
+        dev->saw_pos_y = true;
+        dev->touch_pos.y = value * fb_dimensions.y / (dev->touch_max.y - dev->touch_min.y);
+        printf("process_abs: pos_y: value=%d, dim.y=%d, max.y=%d, min.y=%d -> %d\n", value, fb_dimensions.y, dev->touch_max.y, dev->touch_min.y, dev->touch_pos.y);
+    }
+}
+
+void RecoveryUI::process_rel(input_device* dev, int code, int value) {
+    if (code == REL_Y) {
+        // accumulate the up or down motion reported by
+        // the trackball.  When it exceeds a threshold
+        // (positive or negative), fake an up/down
+        // key event.
+        dev->rel_sum += value;
+        if (dev->rel_sum > 3) {
+            process_key(dev, KEY_DOWN, 1);   // press down key
+            process_key(dev, KEY_DOWN, 0);   // and release it
+            dev->rel_sum = 0;
+        } else if (dev->rel_sum < -3) {
+            process_key(dev, KEY_UP, 1);     // press up key
+            process_key(dev, KEY_UP, 0);     // and release it
+            dev->rel_sum = 0;
+        }
+    }
+}
+
 void* RecoveryUI::time_key_helper(void* cookie) {
     key_timer_t* info = (key_timer_t*) cookie;
     info->ui->time_key(info->key_code, info->count);
@@ -282,88 +551,170 @@ void RecoveryUI::time_key(int key_code, int count) {
     if (long_press) KeyLongPress(key_code);
 }
 
-void RecoveryUI::set_min_swipe_lengths() {
-    char value[PROPERTY_VALUE_MAX];
-    property_get("ro.sf.lcd_density", value, "0");
-    int screen_density = atoi(value);
-    if(screen_density > 0) {
-        min_x_swipe_px = (int)(0.5 * screen_density); // Roughly 0.5in
-        min_y_swipe_px = (int)(0.3 * screen_density); // Roughly 0.3in
+void RecoveryUI::calibrate_touch(input_device* dev) {
+    fb_dimensions.x = gr_fb_width();
+    fb_dimensions.y = gr_fb_height();
+
+    struct input_absinfo info;
+    memset(&info, 0, sizeof(info));
+    if (ioctl(dev->fd, EVIOCGABS(ABS_MT_POSITION_X), &info) == 0) {
+        dev->touch_min.x = info.minimum;
+        dev->touch_max.x = info.maximum;
+        dev->touch_pos.x = info.value;
+    }
+    memset(&info, 0, sizeof(info));
+    if (ioctl(dev->fd, EVIOCGABS(ABS_MT_POSITION_Y), &info) == 0) {
+        dev->touch_min.y = info.minimum;
+        dev->touch_max.y = info.maximum;
+        dev->touch_pos.y = info.value;
+    }
+    printf("calibrate: fd=%d, touch_min=(%d,%d), touch_max=(%d,%d), touch_pos=(%d,%d)\n", dev->fd,
+            dev->touch_min.x, dev->touch_min.y,
+            dev->touch_max.x, dev->touch_max.y,
+            dev->touch_pos.x, dev->touch_pos.y);
+}
+
+void RecoveryUI::setup_vkeys(input_device* dev) {
+    int n;
+    char name[256];
+    char path[PATH_MAX];
+    char buf[1024];
+
+printf("setup_vkeys: enter: fd=%d\n", dev->fd);
+    for (n = 0; n < MAX_NR_VKEYS; ++n) {
+        dev->virtual_keys[n].keycode = -1;
+    }
+
+    memset(name, 0, sizeof(name));
+    if (ioctl(dev->fd, EVIOCGNAME(sizeof(name)), name) < 0) {
+        LOGI("setup_vkeys: no vkeys\n");
+        return;
+    }
+printf("setup_vkeys: name=%s\n", name);
+    sprintf(path, "/sys/board_properties/virtualkeys.%s", name);
+    int vkfd = open(path, O_RDONLY);
+    if (vkfd < 0) {
+        LOGI("setup_vkeys: could not open %s\n", path);
+        return;
+    }
+    ssize_t len = read(vkfd, buf, sizeof(buf));
+    close(vkfd);
+    if (len <= 0) {
+        LOGE("setup_vkeys: could not read %s\n", path);
+        return;
+    }
+printf("setup_vkeys: buflen=%d\n", len);
+    buf[len] = '\0';
+    char* p = buf;
+    for (n = 0; n < MAX_NR_VKEYS && p < buf+len && *p == '0'; ++n) {
+printf("setup_vkeys: read key %d\n", n);
+        p = read_vkey(p, &dev->virtual_keys[n]);
+        if (!p)
+            break;
+printf("setup_vkeys: key[%d]=[%d, (%d,%d)-(%d,%d)]\n", n, dev->virtual_keys[n].keycode,
+            dev->virtual_keys[n].min.x, dev->virtual_keys[n].min.y,
+            dev->virtual_keys[n].max.x, dev->virtual_keys[n].max.y);
     }
 }
 
-void RecoveryUI::reset_gestures() {
-    diff_x = 0;
-    diff_y = 0;
-    old_x = 0;
-    old_y = 0;
-    touch_x = 0;
-    touch_y = 0;
+void RecoveryUI::calibrate_swipe() {
+    char strvalue[PROPERTY_VALUE_MAX];
+    int  intvalue;
+    property_get("ro.sf.lcd_density", strvalue, "160");
+    intvalue = atoi(strvalue);
+    int screen_density = (intvalue >= 160 ? intvalue : 160);
+    min_swipe_px.x = screen_density * 50 / 100; // Roughly 0.5in
+    min_swipe_px.y = screen_density * 30 / 100; // Roughly 0.3in
+    printf("density=%d, min_swipe_x=%d, min_swipe_y=%d\n", screen_density, min_swipe_px.x, min_swipe_px.y);
 }
 
-void RecoveryUI::process_swipe(int fd, struct input_event *ev) {
+void RecoveryUI::handle_press(input_device* dev) {
+printf("handle_press: (%d,%d)\n",
+        dev->touch_pos.x, dev->touch_pos.y);
+    dev->touch_start = dev->touch_track = dev->touch_pos;
+    dev->in_touch = dev->in_swipe = false;
+}
 
-    if (max_x_touch == 0 || max_y_touch == 0) {
-        int abs_store[6] = {0};
-        ioctl(fd, EVIOCGABS(ABS_MT_POSITION_X), abs_store);
-        self->max_x_touch = abs_store[2];
+void RecoveryUI::handle_release(input_device* dev) {
+    struct point diff;
+    diff = dev->touch_pos - dev->touch_start;
+printf("handle_release: (%d,%d) -> (%d,%d) d=(%d,%d)\n",
+        dev->touch_start.x, dev->touch_start.y,
+        dev->touch_pos.x, dev->touch_pos.y,
+        diff.x, diff.y);
 
-        ioctl(fd, EVIOCGABS(ABS_MT_POSITION_Y), abs_store);
-        self->max_y_touch = abs_store[2];
+    if (!dev->in_swipe) {
+        int n;
+        printf("checking vkeys...\n");
+        for (n = 0; dev->virtual_keys[n].keycode != -1 && n < MAX_NR_VKEYS; ++n) {
+            vkey* vk = &dev->virtual_keys[n];
+            printf("checking vkey[%d]: (%d,%d)-(%d,%d)\n", n,
+                    vk->min.x, vk->min.y, vk->max.x, vk->max.y);
+            if (dev->touch_start.x >= vk->min.x && dev->touch_start.x < vk->max.x &&
+                    dev->touch_start.y >= vk->min.y && dev->touch_start.y < vk->max.y) {
+                printf("enqueueing vkey %d\n", vk->keycode);
+                EnqueueKey(vk->keycode);
+                return;
+            }
+        }
     }
 
-    if (ev->type == EV_KEY && ev->code == BTN_TOUCH) {
-        if (ev->value == KEY_DOWN)
-            mt_count++;
-        else if (mt_count > 0 && ev->value == KEY_UP)
-            mt_count--;
-
-        if (mt_count == 0)
-            reset_gestures();
-
-    } else if (ev->type == EV_SYN) {
-        //Print("x=%d y=%d dx=%d dy=%d\n", diff_x, diff_y, min_x_swipe_px, min_y_swipe_px);
-        if (in_touch == 0 && ev->code == SYN_MT_REPORT) {
-            reset_gestures();
-            return;
+    printf("handle_release: showing=%d\n", DialogShowing());
+    if (DialogShowing()) {
+        if (DialogDismissable() && !dev->in_swipe) {
+            DialogDismiss();
         }
-        in_touch = 0;
-        if (diff_y > min_y_swipe_px) {
-            EnqueueKey(KEY_VOLUMEDOWN);
-            reset_gestures();
-        } else if (diff_y < -min_y_swipe_px) {
-            EnqueueKey(KEY_VOLUMEUP);
-            reset_gestures();
-        } else if (diff_x > min_x_swipe_px) {
-            EnqueueKey(KEY_POWER);
-            reset_gestures();
-        } else if (diff_x < -min_x_swipe_px) {
-            EnqueueKey(KEY_BACK);
-            reset_gestures();
-        }
-
-    } else if (ev->type == EV_ABS && ev->code == ABS_MT_POSITION_X) {
-
-        in_touch = 1;
-        old_x = touch_x;
-        float touch_x_rel = (float)ev->value / (float)self->max_x_touch;
-        touch_x = touch_x_rel * gr_fb_width();
-
-        if (old_x != 0)
-            diff_x += touch_x - old_x;
-
-    } else if (ev->type == EV_ABS && ev->code == ABS_MT_POSITION_Y) {
-
-        in_touch = 1;
-        old_y = touch_y;
-        float touch_y_rel = (float)ev->value / (float)self->max_y_touch;
-        touch_y = touch_y_rel * gr_fb_height();
-
-        if (old_y != 0)
-            diff_y += touch_y - old_y;
+        return;
     }
 
-    return;
+    if (dev->in_swipe) {
+        if (abs(diff.x) > abs(diff.y)) {
+            if (abs(diff.x) > min_swipe_px.x) {
+                int key = (diff.x > 0 ? KEY_ENTER : KEY_BACK);
+                process_key(dev, key, 1);
+                process_key(dev, key, 0);
+            }
+        }
+        else {
+            /* Vertical swipe, handled realtime */
+        }
+    }
+    else {
+        int sel;
+        sel = (dev->touch_pos.y - MenuItemStart())/MenuItemHeight();
+        printf("sel: y=%d mis=%d mih=%d => %d\n", dev->touch_pos.y, MenuItemStart(), MenuItemHeight(), sel);
+        EnqueueKey(KEY_FLAG_ABS | sel);
+    }
+}
+
+void RecoveryUI::handle_gestures(input_device* dev) {
+    struct point diff;
+    diff = dev->touch_pos - dev->touch_start;
+printf("handle_gestures: (%d,%d) -> (%d,%d) d=(%d,%d)\n",
+        dev->touch_start.x, dev->touch_start.y,
+        dev->touch_pos.x, dev->touch_pos.y,
+        diff.x, diff.y);
+
+    if (abs(diff.x) > abs(diff.y)) {
+        if (abs(diff.x) > min_swipe_px.x) {
+            /* Horizontal swipe, handle it on release */
+printf("handle_gestures: horizontal swipe\n");
+            dev->in_swipe = true;
+        }
+    }
+    else {
+        diff.y = dev->touch_pos.y - dev->touch_track.y;
+        if (abs(diff.y) > MenuItemHeight()) {
+printf("handle_gestures: vertical swipe\n");
+            dev->in_swipe = true;
+            if (!DialogShowing()) {
+                dev->touch_track = dev->touch_pos;
+                int key = (diff.y < 0) ? KEY_VOLUMEUP : KEY_VOLUMEDOWN;
+                process_key(dev, key, 1);
+                process_key(dev, key, 0);
+            }
+        }
+    }
 }
 
 void RecoveryUI::EnqueueKey(int key_code) {

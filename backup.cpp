@@ -305,6 +305,12 @@ int do_backup(int argc, char **argv)
     hash_name = strdup(opt_hash);
 
     for (i = 0; partlist[i].name; ++i) {
+        logmsg("do_backup: %s\n", partlist[i].name);
+
+        String8 msg("Backing up ");
+        msg += partlist[i].name;
+        ms.Show(msg.string());
+
         const char* fstype = partlist[i].vol->fs_type;
         if (!strcmp(fstype, "mtd") || !strcmp(fstype, "bml") || !strcmp(fstype, "emmc")) {
             rc = tar_append_device_contents(tar, partlist[i].vol->blk_device, partlist[i].name);
