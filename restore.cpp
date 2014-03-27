@@ -19,6 +19,8 @@
 
 #include "bu.h"
 
+#include "messagesocket.h"
+
 using namespace android;
 
 static int verify_sod()
@@ -294,8 +296,14 @@ int do_restore(int argc, char **argv)
 
     logmsg("do_restore: argc=%d\n", argc);
 
+    MessageSocket ms;
+    ms.ClientInit();
+    ms.Show("Restore in progress...");
+
     rc = do_restore_tree(sockfd);
     logmsg("do_restore: rc=%d\n", rc);
+
+    ms.Dismiss();
 
     free(hash_name);
     hash_name = NULL;
