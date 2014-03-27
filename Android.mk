@@ -57,7 +57,7 @@ LOCAL_STATIC_LIBRARIES := \
     libminipigz \
     libreboot_static \
     libvoldclient \
-	libsdcard \
+    libsdcard \
     libminzip \
     libz \
     libmtdutils \
@@ -129,6 +129,53 @@ $(RECOVERY_BUSYBOX_SYMLINKS): $(LOCAL_INSTALLED_MODULE)
 
 ALL_DEFAULT_INSTALLED_MODULES += $(RECOVERY_BUSYBOX_SYMLINKS)
 
+include $(CLEAR_VARS)
+LOCAL_MODULE := bu_recovery
+LOCAL_MODULE_STEM := bu
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
+LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
+LOCAL_FORCE_STATIC_EXECUTABLE := true
+LOCAL_SRC_FILES := \
+    bu.cpp \
+    backup.cpp \
+    restore.cpp \
+    roots.cpp
+LOCAL_CFLAGS += -DMINIVOLD
+ifeq ($(TARGET_USERIMAGES_USE_EXT4), true)
+    LOCAL_CFLAGS += -DUSE_EXT4
+    LOCAL_C_INCLUDES += system/extras/ext4_utils
+    LOCAL_STATIC_LIBRARIES += libext4_utils_static libz
+endif
+LOCAL_STATIC_LIBRARIES += \
+    libsparse_static \
+    libvoldclient \
+    libz \
+    libmtdutils \
+    libminadbd \
+    libminui \
+    libfs_mgr \
+    libtar \
+    libselinux \
+    libutils \
+    libcutils \
+    liblog \
+    libm \
+    libc
+
+LOCAL_C_INCLUDES +=         	\
+    bootable/simplerecovery    	\
+    system/core/fs_mgr/include	\
+    system/core/include     	\
+    system/core/libcutils       \
+    external/libtar             \
+    external/libtar/listhash    \
+    external/zlib               \
+    bionic/libc/bionic
+
+
+include $(BUILD_EXECUTABLE)
+
 # make_ext4fs
 include $(CLEAR_VARS)
 LOCAL_MODULE := libmake_ext4fs_static
@@ -196,6 +243,6 @@ include $(LOCAL_PATH)/minui/Android.mk \
     $(LOCAL_PATH)/edify/Android.mk \
     $(LOCAL_PATH)/updater/Android.mk \
     $(LOCAL_PATH)/applypatch/Android.mk \
-	$(LOCAL_PATH)/voldclient/Android.mk
+    $(LOCAL_PATH)/voldclient/Android.mk
 
 endif
