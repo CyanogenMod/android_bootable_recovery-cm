@@ -606,6 +606,11 @@ get_menu_selection(const char* const * headers, const char* const * items,
     // accidentally trigger menu items.
     ui->FlushKeys();
 
+    // Count items to detect valid values for absolute selection
+    int item_count = 0;
+    while (items[item_count] != NULL)
+        ++item_count;
+
     ui->StartMenu(headers, items, initial_selection);
     int selected = initial_selection;
     int chosen_item = -1;
@@ -630,6 +635,20 @@ get_menu_selection(const char* const * headers, const char* const * items,
         }
 
         int action = device->HandleMenuKey(key, visible);
+
+        if (action >= 0) {
+            if (action >= item_count) {
+                action = Device::kNoAction;
+            }
+            else {
+                // Absolute selection.  Update selected item and give some
+                // feedback in the UI by selecting the item for a short time.
+                selected = action;
+                action = Device::kInvokeItem;
+                selected = ui->SelectMenu(selected);
+                usleep(50*1000);
+            }
+        }
 
         if (action < 0) {
             switch (action) {

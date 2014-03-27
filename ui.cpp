@@ -45,6 +45,104 @@
 
 #define UI_WAIT_KEY_TIMEOUT_SEC    120
 
+/* Some extra input defines */
+#ifndef ABS_MT_ANGLE
+#define ABS_MT_ANGLE 0x38
+#endif
+
+#define DEBUG_TOUCH_EVENTS
+
+static void show_event(struct input_event *ev)
+{
+#ifdef DEBUG_TOUCH_EVENTS
+    char typebuf[40];
+    char codebuf[40];
+    const char *evtypestr = NULL;
+    const char *evcodestr = NULL;
+
+    sprintf(typebuf, "0x%04x", ev->type);
+    evtypestr = typebuf;
+
+    sprintf(codebuf, "0x%04x", ev->code);
+    evcodestr = codebuf;
+
+    switch (ev->type) {
+    case EV_SYN:
+        evtypestr = "EV_SYN";
+        switch (ev->code) {
+        case SYN_REPORT:
+            evcodestr = "SYN_REPORT";
+            break;
+        case SYN_MT_REPORT:
+            evcodestr = "SYN_MT_REPORT";
+            break;
+        }
+        break;
+    case EV_KEY:
+        evtypestr = "EV_KEY";
+        switch (ev->code) {
+        case BTN_TOOL_FINGER:
+            evcodestr = "BTN_TOOL_FINGER";
+            break;
+        case BTN_TOUCH:
+            evcodestr = "BTN_TOUCH";
+            break;
+        }
+        break;
+    case EV_REL:
+        evtypestr = "EV_REL";
+        switch (ev->code) {
+        case REL_X:
+            evcodestr = "REL_X";
+            break;
+        case REL_Y:
+            evcodestr = "REL_Y";
+            break;
+        case REL_Z:
+            evcodestr = "REL_Z";
+            break;
+        }
+        break;
+    case EV_ABS:
+        evtypestr = "EV_ABS";
+        switch (ev->code) {
+        case ABS_MT_TOUCH_MAJOR:
+            evcodestr = "ABS_MT_TOUCH_MAJOR";
+            break;
+        case ABS_MT_TOUCH_MINOR:
+            evcodestr = "ABS_MT_TOUCH_MINOR";
+            break;
+        case ABS_MT_WIDTH_MAJOR:
+            evcodestr = "ABS_MT_WIDTH_MAJOR";
+            break;
+        case ABS_MT_WIDTH_MINOR:
+            evcodestr = "ABS_MT_WIDTH_MINOR";
+            break;
+        case ABS_MT_ORIENTATION:
+            evcodestr = "ABS_MT_ORIGENTATION";
+            break;
+        case ABS_MT_POSITION_X:
+            evcodestr = "ABS_MT_POSITION_X";
+            break;
+        case ABS_MT_POSITION_Y:
+            evcodestr = "ABS_MT_POSITION_Y";
+            break;
+        case ABS_MT_TRACKING_ID:
+            evcodestr = "ABS_MT_TRACKING_ID";
+            break;
+        case ABS_MT_PRESSURE:
+            evcodestr = "ABS_MT_PRESSURE";
+            break;
+        case ABS_MT_ANGLE:
+            evcodestr = "ABS_MT_ANGLE";
+            break;
+        }
+        break;
+    }
+    LOGI("show_event: type=%s, code=%s, val=%d\n", evtypestr, evcodestr, ev->value);
+#endif
+}
+
 // There's only (at most) one of these objects, and global callbacks
 // (for pthread_create, and the input event system) need to find it,
 // so use a global variable.
@@ -132,24 +230,18 @@ RecoveryUI::RecoveryUI() :
     consecutive_alternate_keys(0),
     last_key(-1),
     in_touch(0),
-    touch_x(0),
-    touch_y(0),
-    old_x(0),
-    old_y(0),
-    diff_x(0),
-    diff_y(0),
-    min_x_swipe_px(100),
-    min_y_swipe_px(80),
-    max_x_touch(0),
-    max_y_touch(0),
-    mt_count(0) {
+    in_swipe(0) {
     pthread_mutex_init(&key_queue_mutex, NULL);
     pthread_cond_init(&key_queue_cond, NULL);
+
+    touch_start.x = touch_last.x = touch_end.x = -1;
+    touch_start.y = touch_last.y = touch_end.y = -1;
+
     self = this;
 }
 
 void RecoveryUI::Init() {
-    set_min_swipe_lengths();
+    calibrate_swipe();
     ev_init(input_callback, NULL);
     message_socket.ServerInit();
     ev_add_fd(message_socket.fd(), message_socket_listen_event, &message_socket);
@@ -166,7 +258,7 @@ int RecoveryUI::input_callback(int fd, short revents, void* data)
     if (ret)
         return -1;
 
-    self->process_swipe(fd, &ev);
+    self->process_touch(fd, &ev);
 
     if (ev.type == EV_SYN) {
         return 0;
@@ -282,88 +374,248 @@ void RecoveryUI::time_key(int key_code, int count) {
     if (long_press) KeyLongPress(key_code);
 }
 
-void RecoveryUI::set_min_swipe_lengths() {
-    char value[PROPERTY_VALUE_MAX];
-    property_get("ro.sf.lcd_density", value, "0");
-    int screen_density = atoi(value);
-    if(screen_density > 0) {
-        min_x_swipe_px = (int)(0.5 * screen_density); // Roughly 0.5in
-        min_y_swipe_px = (int)(0.3 * screen_density); // Roughly 0.3in
+void RecoveryUI::calibrate_touch(int fd) {
+    fb_dimensions.x = gr_fb_width();
+    fb_dimensions.y = gr_fb_height();
+
+    struct input_absinfo info;
+    memset(&info, 0, sizeof(info));
+    ioctl(fd, EVIOCGABS(ABS_MT_POSITION_X), &info);
+    touch_min.x = info.minimum;
+    touch_max.x = info.maximum;
+    memset(&info, 0, sizeof(info));
+    ioctl(fd, EVIOCGABS(ABS_MT_POSITION_Y), &info);
+    touch_min.y = info.minimum;
+    touch_max.y = info.maximum;
+    printf("touch_min=(%d,%d), touch_max=(%d,%d)\n", touch_min.x, touch_min.y, touch_max.x, touch_max.y);
+}
+
+void RecoveryUI::calibrate_swipe() {
+    char strvalue[PROPERTY_VALUE_MAX];
+    int  intvalue;
+    property_get("ro.sf.lcd_density", strvalue, "160");
+    intvalue = atoi(strvalue);
+    int screen_density = (intvalue >= 160 ? intvalue : 160);
+    min_swipe_px.x = screen_density * 50 / 100; // Roughly 0.5in
+    min_swipe_px.y = screen_density * 30 / 100; // Roughly 0.3in
+    printf("density=%d, min_swipe_x=%d, min_swipe_y=%d\n", screen_density, min_swipe_px.x, min_swipe_px.y);
+}
+
+int RecoveryUI::touch_scale_x(int val) {
+    int scaled = val * fb_dimensions.x / (touch_max.x - touch_min.x);
+    return scaled;
+}
+
+int RecoveryUI::touch_scale_y(int val) {
+    int scaled = val * fb_dimensions.y / (touch_max.y - touch_min.y);
+    return scaled;
+}
+
+void RecoveryUI::handle_press() {
+printf("handle_press: (%d,%d) -> (%d,%d)\n",
+        touch_start.x, touch_start.y,
+        touch_end.x, touch_end.y);
+}
+
+void RecoveryUI::handle_release() {
+    struct point diff;
+    diff.x = touch_end.x - touch_start.x;
+    diff.y = touch_end.y - touch_start.y;
+printf("handle_release: (%d,%d) -> (%d,%d) d=(%d,%d)\n",
+        touch_start.x, touch_start.y,
+        touch_end.x, touch_end.y,
+        diff.x, diff.y);
+
+    printf("handle_release: showing=%d\n", DialogShowing());
+    if (DialogShowing()) {
+        if (DialogDismissable() && !in_swipe) {
+            DialogDismiss();
+        }
+        return;
+    }
+
+    if (in_swipe) {
+        if (abs(diff.x) > abs(diff.y)) {
+            if (abs(diff.x) > min_swipe_px.x) {
+                int key = (diff.x > 0 ? KEY_ENTER : KEY_BACK);
+                process_key(key, 1);
+                process_key(key, 0);
+            }
+        }
+        else {
+            /* Vertical swipe, handled realtime */
+        }
+    }
+    else {
+        int sel;
+        sel = (touch_end.y - MenuItemStart())/MenuItemHeight();
+        printf("sel: y=%d mis=%d mih=%d => %d\n", touch_end.y, MenuItemStart(), MenuItemHeight(), sel);
+        EnqueueKey(KEY_FLAG_ABS | sel);
     }
 }
 
-void RecoveryUI::reset_gestures() {
-    diff_x = 0;
-    diff_y = 0;
-    old_x = 0;
-    old_y = 0;
-    touch_x = 0;
-    touch_y = 0;
+void RecoveryUI::handle_gestures() {
+    struct point diff;
+    diff.x = touch_end.x - touch_start.x;
+    diff.y = touch_end.y - touch_start.y;
+printf("handle_gestures: (%d,%d) -> (%d,%d) d=(%d,%d)\n",
+        touch_start.x, touch_start.y,
+        touch_end.x, touch_end.y,
+        diff.x, diff.y);
+
+    if (touch_end.x == -1 || touch_end.y == -1) {
+        return;
+    }
+    if (abs(diff.x) > abs(diff.y)) {
+        if (abs(diff.x) > gr_fb_width()/4) {
+            /* Horizontal swipe, handle it on release */
+            in_swipe = 1;
+        }
+    }
+    else {
+        if (touch_last.y == -1) {
+            touch_last.y = touch_end.y;
+        }
+        diff.y = touch_end.y - touch_last.y;
+        if (abs(diff.y) > MenuItemHeight()) {
+            in_swipe = 1;
+            if (!DialogShowing()) {
+                touch_last.y = touch_end.y;
+                int key = (diff.y < 0) ? KEY_VOLUMEUP : KEY_VOLUMEDOWN;
+                process_key(key, 1);
+                process_key(key, 0);
+            }
+        }
+    }
 }
 
-void RecoveryUI::process_swipe(int fd, struct input_event *ev) {
+static int  touch_active_slot_count = 0;
+static int  touch_first_slot = 0;
+static int  touch_current_slot = 0;
+static int  touch_tracking_id = -1;
+static bool touch_saw_x = false;
+static bool touch_saw_y = false;
 
-    if (max_x_touch == 0 || max_y_touch == 0) {
-        int abs_store[6] = {0};
-        ioctl(fd, EVIOCGABS(ABS_MT_POSITION_X), abs_store);
-        self->max_x_touch = abs_store[2];
+void RecoveryUI::process_touch(int fd, struct input_event *ev) {
 
-        ioctl(fd, EVIOCGABS(ABS_MT_POSITION_Y), abs_store);
-        self->max_y_touch = abs_store[2];
+    show_event(ev);
+
+    if (touch_max.x == 0 || touch_max.y == 0) {
+        calibrate_touch(fd);
     }
 
-    if (ev->type == EV_KEY && ev->code == BTN_TOUCH) {
-        if (ev->value == KEY_DOWN)
-            mt_count++;
-        else if (mt_count > 0 && ev->value == KEY_UP)
-            mt_count--;
+    /*
+     * Type A device release:
+     *   1. Lack of position update
+     *   2. BTN_TOUCH | ABS_PRESSURE | SYN_MT_REPORT
+     *   3. SYN_REPORT
+     *
+     * Type B device release:
+     *   1. ABS_MT_TRACKING_ID == -1 for "first" slot
+     *   2. SYN_REPORT
+     */
 
-        if (mt_count == 0)
-            reset_gestures();
+    if (ev->type == EV_SYN) {
+printf("process_touch: in_touch=%d, in_swipe=%d\n", in_touch, in_swipe);
+        if (ev->code == SYN_REPORT) {
+            if (in_touch) {
+                printf(" .. in_touch\n");
+                /* Detect release */
+                if (touch_active_slot_count == 0 && !touch_saw_x && !touch_saw_y) {
+                    /* type A release */
+                    printf("  type a release\n");
+                    if (in_touch) {
+                        handle_release();
+                    }
+                    in_touch = 0;
+                    in_swipe = 0;
+                    touch_start.x = touch_last.x = touch_end.x = -1;
+                    touch_start.y = touch_last.y = touch_end.y = -1;
+                    touch_current_slot = touch_first_slot = 0;
+                }
+                else if (touch_current_slot == touch_first_slot && touch_tracking_id == -1) {
+                    /* type B release */
+                    printf("  type b release\n");
+                    if (in_touch) {
+                        handle_release();
+                    }
+                    in_touch = 0;
+                    in_swipe = 0;
+                    touch_start.x = touch_last.x = touch_end.x = -1;
+                    touch_start.y = touch_last.y = touch_end.y = -1;
+                    touch_current_slot = touch_first_slot = 0;
+                }
+            }
+            else {
+                printf(" .. not in_touch\n");
+                if (touch_saw_x && touch_saw_y) {
+                    handle_press();
+                    in_touch = 1;
+                }
+            }
 
-    } else if (ev->type == EV_SYN) {
-        //Print("x=%d y=%d dx=%d dy=%d\n", diff_x, diff_y, min_x_swipe_px, min_y_swipe_px);
-        if (in_touch == 0 && ev->code == SYN_MT_REPORT) {
-            reset_gestures();
+            if (in_touch) {
+                handle_gestures();
+            }
+
+            touch_saw_x = touch_saw_y = false;
+        }
+    }
+    else if (ev->type == EV_ABS) {
+        if (ev->code == ABS_MT_SLOT) {
+            touch_current_slot = ev->value;
+            if (touch_first_slot == -1) {
+                touch_first_slot = touch_current_slot;
+            }
             return;
         }
-        in_touch = 0;
-        if (diff_y > min_y_swipe_px) {
-            EnqueueKey(KEY_VOLUMEDOWN);
-            reset_gestures();
-        } else if (diff_y < -min_y_swipe_px) {
-            EnqueueKey(KEY_VOLUMEUP);
-            reset_gestures();
-        } else if (diff_x > min_x_swipe_px) {
-            EnqueueKey(KEY_POWER);
-            reset_gestures();
-        } else if (diff_x < -min_x_swipe_px) {
-            EnqueueKey(KEY_BACK);
-            reset_gestures();
+        if (ev->code == ABS_MT_TRACKING_ID) {
+            touch_tracking_id = ev->value;
+            if (touch_tracking_id == -1) {
+                touch_active_slot_count--;
+            }
+            else {
+                touch_active_slot_count++;
+            }
+            printf("tracking id %d, active %d\n", touch_tracking_id, touch_active_slot_count);
+            return;
         }
-
-    } else if (ev->type == EV_ABS && ev->code == ABS_MT_POSITION_X) {
-
-        in_touch = 1;
-        old_x = touch_x;
-        float touch_x_rel = (float)ev->value / (float)self->max_x_touch;
-        touch_x = touch_x_rel * gr_fb_width();
-
-        if (old_x != 0)
-            diff_x += touch_x - old_x;
-
-    } else if (ev->type == EV_ABS && ev->code == ABS_MT_POSITION_Y) {
-
-        in_touch = 1;
-        old_y = touch_y;
-        float touch_y_rel = (float)ev->value / (float)self->max_y_touch;
-        touch_y = touch_y_rel * gr_fb_height();
-
-        if (old_y != 0)
-            diff_y += touch_y - old_y;
+        /*
+         * For type A devices, we "lock" onto the first coordinates by ignoring
+         * position updates from the time we see a SYN_MT_REPORT until the next
+         * SYN_REPORT
+         *
+         * For type B devices, we "lock" onto the first slot seen until all slots
+         * are released
+         */
+        if (touch_active_slot_count == 0) {
+            /* type A */
+            if (touch_saw_x && touch_saw_y) {
+                return;
+            }
+        }
+        else {
+            if (touch_current_slot != touch_first_slot) {
+                return;
+            }
+        }
+        if (ev->code == ABS_MT_POSITION_X) {
+            if (ev->value >= touch_min.x && ev->value < touch_max.x) {
+                touch_saw_x = true;
+                touch_end.x = touch_scale_x(ev->value);
+                if (touch_start.x == -1)
+                    touch_start.x = touch_last.x = touch_end.x;
+            }
+        }
+        else if (ev->code == ABS_MT_POSITION_Y) {
+            if (ev->value >= touch_min.y && ev->value < touch_max.y) {
+                touch_saw_y = true;
+                touch_end.y = touch_scale_y(ev->value);
+                if (touch_start.y == -1)
+                    touch_start.y = touch_last.y = touch_end.y;
+            }
+        }
     }
-
-    return;
 }
 
 void RecoveryUI::EnqueueKey(int key_code) {

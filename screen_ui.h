@@ -53,6 +53,8 @@ class ScreenRecoveryUI : public RecoveryUI {
     void DialogDismiss();
 
     // menu display
+    virtual int MenuItemStart() const { return menu_item_start; }
+    virtual int MenuItemHeight() const { return 3*char_height; }
     void StartMenu(const char* const * headers, const char* const * items,
                            int initial_selection);
     int SelectMenu(int sel);
@@ -73,6 +75,7 @@ class ScreenRecoveryUI : public RecoveryUI {
     bool rtl_locale;
 
     pthread_mutex_t updateMutex;
+    gr_surface headerIcon;
     gr_surface backgroundIcon[NR_ICONS];
     gr_surface backgroundText[NR_ICONS];
     gr_surface *installation;
@@ -106,9 +109,11 @@ class ScreenRecoveryUI : public RecoveryUI {
 
     char menu[kMaxMenuRows][kMaxMenuCols];
     bool show_menu;
-    int menu_top, menu_items, menu_sel;
+    int menu_items, menu_sel;
     int menu_show_start;
     int max_menu_rows;
+
+    int menu_item_start;
 
     pthread_t progress_t;
 
@@ -117,9 +122,17 @@ class ScreenRecoveryUI : public RecoveryUI {
 
     int iconX, iconY;
 
+    int char_height;
+    int char_width;
+
+    int header_height;
+    int header_width;
+
     void draw_install_overlay_locked(int frame);
     void draw_background_locked(Icon icon);
     void draw_progress_locked();
+    int  draw_header_icon();
+    void draw_menu_item(int textrow, const char *text, int selected);
     void draw_dialog();
     void draw_screen_locked();
     void update_screen_locked();
