@@ -495,6 +495,8 @@ erase_volume(const char *volume, bool force = false) {
 
 static char*
 copy_sideloaded_package(const char* original_path) {
+  ui->ClearLog();
+  ui->SetBackground(RecoveryUI::INSTALLING_UPDATE);
   if (ensure_path_mounted(original_path) != 0) {
     LOGE("Can't mount %s\n", original_path);
     return NULL;
@@ -609,6 +611,11 @@ get_menu_selection(const char* const * headers, const char* const * items,
     // accidentally trigger menu items.
     ui->FlushKeys();
 
+    // Count items to detect valid values for absolute selection
+    int item_count = 0;
+    while (items[item_count] != NULL)
+        ++item_count;
+
     ui->StartMenu(headers, items, initial_selection);
     int selected = initial_selection;
     int chosen_item = -1;
@@ -633,6 +640,20 @@ get_menu_selection(const char* const * headers, const char* const * items,
         }
 
         int action = device->HandleMenuKey(key, visible);
+
+        if (action >= 0) {
+            if ((action & ~KEY_FLAG_ABS) >= item_count) {
+                action = Device::kNoAction;
+            }
+            else {
+                // Absolute selection.  Update selected item and give some
+                // feedback in the UI by selecting the item for a short time.
+                selected = action;
+                action = Device::kInvokeItem;
+                selected = ui->SelectMenu(selected);
+                usleep(50*1000);
+            }
+        }
 
         if (action < 0) {
             switch (action) {
@@ -807,6 +828,9 @@ update_directory(const char* path, int* wipe_cache, Device* device) {
             } else {
                 result = install_package(new_path, wipe_cache, TEMPORARY_INSTALL_FILE);
             }
+            if (result != INSTALL_SUCCESS) {
+                ui->DialogShowErrorLog("Install failed");
+            }
             break;
         }
     } while (true);
@@ -966,14 +990,17 @@ show_apply_update_menu(Device* device) {
         ui->Print("\n-- Wiping cache (at package request)...\n");
         if (erase_volume("/cache")) {
             ui->Print("Cache wipe failed.\n");
+            ui->DialogShowInfo("Wiping cache ...");
         } else {
             ui->Print("Cache wipe complete.\n");
+                ui->DialogDismiss();
         }
     }
     if (status >= 0) {
         if (status != INSTALL_SUCCESS) {
             ui->SetBackground(RecoveryUI::ERROR);
             ui->Print("Installation aborted.\n");
+            ui->DialogShowErrorLog("Install failed");
         } else if (ui->IsTextVisible()) {
             ui->Print("\nInstallation complete.\n");
         }
@@ -1029,8 +1056,10 @@ prompt_and_wait(Device* device, int status) {
 
                 case Device::WIPE_CACHE:
                     ui->Print("\n-- Wiping cache...\n");
+                    ui->DialogShowInfo("Wiping cache ...");
                     erase_volume("/cache");
                     ui->Print("Cache wipe complete.\n");
+                    ui->DialogDismiss();
                     if (!ui->IsTextVisible()) return;
                     break;
 

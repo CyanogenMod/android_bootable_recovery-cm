@@ -60,6 +60,9 @@ class DefaultDevice : public Device {
 
     int HandleMenuKey(int key, int visible) {
         if (visible) {
+            if (key & KEY_FLAG_ABS) {
+                return key;
+            }
             switch (key) {
               case KEY_RIGHTSHIFT:
               case KEY_DOWN:
