@@ -44,6 +44,9 @@ FILE* fopen_path(const char *path, const char *mode);
 
 void ui_print(const char* format, ...);
 
+#define KEY_ABS_START 0x1000
+#define KEY_ABS_END   0x10ff
+
 #ifdef __cplusplus
 }
 #endif

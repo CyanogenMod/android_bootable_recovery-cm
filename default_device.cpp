@@ -86,6 +86,8 @@ class DefaultDevice : public Device {
                 if (!ui_root_menu)
                   return kGoBack;
             }
+            if (key >= KEY_ABS_START && key <= KEY_ABS_END)
+                return kAbsStart + (key - KEY_ABS_START);
         }
 
         return kNoAction;

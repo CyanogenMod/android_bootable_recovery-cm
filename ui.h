@@ -23,6 +23,14 @@
 
 #include "messagesocket.h"
 
+struct point {
+    int x;
+    int y;
+
+    point() : x(0), y(0) {}
+    void reset() { x = y = 0; }
+};
+
 // Abstract class for controlling the user interface during recovery.
 class RecoveryUI {
   public:
@@ -103,6 +111,9 @@ class RecoveryUI {
 
     // --- menu display ---
 
+    virtual int MenuItemStart() const = 0;
+    virtual int MenuItemHeight() const = 0;
+
     // Display some header text followed by a menu of items, which appears
     // at the top of the screen (in place of any scrolling ui_print()
     // output, if necessary).
@@ -141,17 +152,16 @@ private:
 
     // Swipe tracking
     int in_touch; // 1 = in a touch
-    int touch_x;
-    int touch_y;
-    int old_x;
-    int old_y;
-    int diff_x;
-    int diff_y;
-    int min_x_swipe_px;
-    int min_y_swipe_px;
-    int max_x_touch;
-    int max_y_touch;
-    int mt_count;
+    int in_swipe;
+
+    point touch_start;
+    point touch_end;
+    point touch_last;
+
+    point fb_dimensions;
+    point touch_min;
+    point touch_max;
+    point min_swipe_px;
 
     MessageSocket message_socket;
 
@@ -172,9 +182,14 @@ private:
     static void* time_key_helper(void* cookie);
     void time_key(int key_code, int count);
 
-    void process_swipe(int fd, struct input_event *ev);
-    void set_min_swipe_lengths();
-    void reset_gestures();
+    void process_touch(int fd, struct input_event *ev);
+    void calibrate_touch(int fd);
+    void calibrate_swipe();
+    int  touch_scale_x(int val);
+    int  touch_scale_y(int val);
+    void handle_press();
+    void handle_release();
+    void handle_gestures();
 };
 
 #endif  // RECOVERY_UI_H
