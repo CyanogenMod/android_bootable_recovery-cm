@@ -134,8 +134,6 @@ private:
 
     // Swipe tracking
     int in_touch; // 1 = in a touch
-    int slide_right;
-    int slide_left;
     int touch_x;
     int touch_y;
     int old_x;
@@ -146,6 +144,7 @@ private:
     int min_y_swipe_px;
     int max_x_touch;
     int max_y_touch;
+    int mt_count;
 
     typedef struct {
         RecoveryUI* ui;
