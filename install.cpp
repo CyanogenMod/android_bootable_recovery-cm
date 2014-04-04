@@ -34,6 +34,8 @@
 #include "verifier.h"
 #include "ui.h"
 
+#include "cutils/properties.h"
+
 extern RecoveryUI* ui;
 
 #define ASSUMED_UPDATE_BINARY_NAME  "META-INF/com/google/android/update-binary"
@@ -178,6 +180,8 @@ try_update_binary(const char *path, ZipArchive *zip, int* wipe_cache) {
 static int
 really_install_package(const char *path, int* wipe_cache)
 {
+    int ret = 0;
+
     ui->SetBackground(RecoveryUI::INSTALLING_UPDATE);
     ui->Print("Finding update package...\n");
     // Give verification half the progress bar...
@@ -221,6 +225,8 @@ really_install_package(const char *path, int* wipe_cache)
     }
     LOGI("%d key(s) loaded from %s\n", numKeys, PUBLIC_KEYS_FILE);
 
+    set_perf_mode(true);
+
     ui->Print("Verifying update package...\n");
 
     int err;
@@ -229,7 +235,8 @@ really_install_package(const char *path, int* wipe_cache)
     LOGI("verify_file returned %d\n", err);
     if (err != VERIFY_SUCCESS) {
         LOGE("signature verification failed\n");
-        return INSTALL_CORRUPT;
+        ret = INSTALL_CORRUPT;
+        goto out;
     }
 
     /* Try to open the package.
@@ -238,13 +245,18 @@ really_install_package(const char *path, int* wipe_cache)
     err = mzOpenZipArchive(path, &zip);
     if (err != 0) {
         LOGE("Can't open %s\n(%s)\n", path, err != -1 ? strerror(err) : "bad");
-        return INSTALL_CORRUPT;
+        ret = INSTALL_CORRUPT;
+        goto out;
     }
 
     /* Verify and install the contents of the package.
      */
     ui->Print("Installing update...\n");
-    return try_update_binary(path, &zip, wipe_cache);
+    ret = try_update_binary(path, &zip, wipe_cache);
+
+out:
+    set_perf_mode(false);
+    return ret;
 }
 
 int
@@ -270,4 +282,9 @@ install_package(const char* path, int* wipe_cache, const char* install_file)
         fclose(install_log);
     }
     return result;
+}
+
+void
+set_perf_mode(bool enable) {
+    property_set("recovery.perf.mode", enable ? "1" : "0");
 }
