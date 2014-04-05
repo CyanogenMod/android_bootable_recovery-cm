@@ -114,6 +114,8 @@ start_sideload(RecoveryUI* ui_) {
 int
 apply_from_adb(int* wipe_cache, const char* install_file) {
 
+    int ret = INSTALL_ERROR;
+
     set_perf_mode(true);
 
     set_usb_driver(false);
@@ -133,11 +135,12 @@ apply_from_adb(int* wipe_cache, const char* install_file) {
         } else {
             ui->Print("Error reading package:\n  %s\n", strerror(errno));
         }
-        return INSTALL_ERROR;
+        return ret;
     }
 
-    int install_status = install_package(ADB_SIDELOAD_FILENAME, wipe_cache, install_file);
+    ret = install_package(ADB_SIDELOAD_FILENAME, wipe_cache, install_file);
 
     remove(ADB_SIDELOAD_FILENAME);
-    return install_status;
+
+    return ret;
 }
