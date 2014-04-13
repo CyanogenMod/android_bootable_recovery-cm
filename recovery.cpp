@@ -1230,11 +1230,6 @@ main(int argc, char **argv) {
         ui->Print("Warning: No file_contexts\n");
     }
 
-    //display directions for swipe controls
-    ui->Print("Swipe up/down to change selections.\n");
-    ui->Print("Swipe to the right for enter.\n");
-    ui->Print("Swipe to the left for back.\n");
-
     device->StartRecovery();
 
     printf("Command:");
