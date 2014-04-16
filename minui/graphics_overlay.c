@@ -42,8 +42,10 @@
 #include <linux/fb.h>
 #include <linux/kd.h>
 
+#ifdef MSM_BSP
 #include <linux/msm_mdp.h>
 #include <linux/msm_ion.h>
+#endif
 
 #include "minui.h"
 #include "graphics.h"
@@ -69,6 +71,7 @@ static minui_backend overlay_backend = {
     .exit = overlay_exit,
 };
 
+#ifdef MSM_BSP
 typedef struct {
     int size;
     int ion_fd;
@@ -89,10 +92,12 @@ static int map_mdp_pixel_format()
 #endif
     return format;
 }
+#endif /* ifdef MSM_BSP */
 
 bool target_has_overlay()
 {
     bool ret = false;
+#ifdef MSM_BSP
     char version[32];
     char str_ver[4];
     int len = 0;
@@ -117,6 +122,7 @@ bool target_has_overlay()
             ret = true;
         }
     }
+#endif
 
     return ret;
 }
@@ -124,6 +130,8 @@ bool target_has_overlay()
 minui_backend* open_overlay() {
     return &overlay_backend;
 }
+
+#ifdef MSM_BSP
 
 static int free_ion_mem(void) {
     int ret = 0;
@@ -289,6 +297,34 @@ static int overlay_display_frame(int fd, size_t size)
 
     return ret;
 }
+
+#else
+
+static int free_ion_mem(void) {
+    return -EINVAL;
+}
+
+static int alloc_ion_mem(unsigned int size)
+{
+    return -EINVAL;
+}
+
+static int allocate_overlay(int fd)
+{
+    return -EINVAL;
+}
+
+static int free_overlay(int fd)
+{
+    return -EINVAL;
+}
+
+static int overlay_display_frame(int fd, size_t size)
+{
+    return -EINVAL;
+}
+
+#endif
 
 static gr_surface overlay_init(minui_backend* backend)
 {
