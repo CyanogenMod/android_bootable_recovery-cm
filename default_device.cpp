@@ -20,17 +20,18 @@
 #include "device.h"
 #include "screen_ui.h"
 
+#include "roots.h"
+
 static const char* HEADERS[] = { "Swipe up/down to change selections;",
                                  "swipe right to select, or left to go back.",
                                  "",
                                  NULL };
 
 static const char* ITEMS[] =  {"reboot system now",
-                               "apply update from ADB",
+                               "apply update",
                                "wipe data/factory reset",
                                "wipe cache partition",
                                "wipe media",
-                               "apply update from sdcard",
                                NULL };
 
 class DefaultUI : public ScreenRecoveryUI {
@@ -49,6 +50,10 @@ class DefaultDevice : public Device {
   public:
     DefaultDevice() :
         ui(new DefaultUI) {
+        // Remove "wipe media" option for non-datamedia devices
+        if (!is_data_media()) {
+            ITEMS[4] = NULL;
+        }
     }
 
     RecoveryUI* GetUI() { return ui; }
@@ -87,13 +92,17 @@ class DefaultDevice : public Device {
     }
 
     BuiltinAction InvokeMenuItem(int menu_position) {
+        if (menu_position < 0 ||
+                menu_position >= (int)(sizeof(ITEMS)/sizeof(ITEMS[0])) ||
+                ITEMS[menu_position] == NULL) {
+            return NO_ACTION;
+        }
         switch (menu_position) {
           case 0: return REBOOT;
-          case 1: return APPLY_ADB_SIDELOAD;
+          case 1: return APPLY_UPDATE;
           case 2: return WIPE_DATA;
           case 3: return WIPE_CACHE;
           case 4: return WIPE_MEDIA;
-          case 5: return APPLY_EXT;
 	  default: return NO_ACTION;
         }
     }

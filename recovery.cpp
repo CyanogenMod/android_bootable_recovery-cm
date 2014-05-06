@@ -78,7 +78,6 @@ static const char *LOG_FILE = "/cache/recovery/log";
 static const char *LAST_INSTALL_FILE = "/cache/recovery/last_install";
 static const char *LOCALE_FILE = "/cache/recovery/last_locale";
 static const char *CACHE_ROOT = "/cache";
-static const char *SDCARD_ROOT = "/sdcard";
 static const char *TEMPORARY_LOG_FILE = "/tmp/recovery.log";
 static const char *TEMPORARY_INSTALL_FILE = "/tmp/last_install";
 static const char *SIDELOAD_TEMP_DIR = "/tmp/sideload";
@@ -86,6 +85,8 @@ static const char *SIDELOAD_TEMP_DIR = "/tmp/sideload";
 RecoveryUI* ui = NULL;
 char* locale = NULL;
 char recovery_version[PROPERTY_VALUE_MAX+1];
+
+#include "mtdutils/mounts.h"
 
 /*
  * The recovery tool communicates with the main system through /cache files.
@@ -652,10 +653,7 @@ check_avphys_mem(const char *path) {
 }
 
 static int
-update_directory(const char* path, const char* unmount_when_done,
-                 int* wipe_cache, Device* device) {
-    ensure_path_mounted(path);
-
+update_directory(const char* path, int* wipe_cache, Device* device) {
     const char* MENU_HEADERS[] = { "Choose a package to install:",
                                    path,
                                    "",
@@ -665,9 +663,6 @@ update_directory(const char* path, const char* unmount_when_done,
     d = opendir(path);
     if (d == NULL) {
         LOGE("error opening %s: %s\n", path, strerror(errno));
-        if (unmount_when_done != NULL) {
-            ensure_path_unmounted(unmount_when_done);
-        }
         return 0;
     }
 
@@ -742,7 +737,7 @@ update_directory(const char* path, const char* unmount_when_done,
             strlcat(new_path, "/", PATH_MAX);
             strlcat(new_path, item, PATH_MAX);
             new_path[strlen(new_path)-1] = '\0';  // truncate the trailing '/'
-            result = update_directory(new_path, unmount_when_done, wipe_cache, device);
+            result = update_directory(new_path, wipe_cache, device);
             if (result >= 0) break;
         } else {
             // selected a zip file:  attempt to install it, and return
@@ -757,9 +752,6 @@ update_directory(const char* path, const char* unmount_when_done,
 
             if (!check_avphys_mem(new_path)) {
                 char* copy = copy_sideloaded_package(new_path);
-                if (unmount_when_done != NULL) {
-                    ensure_path_unmounted(unmount_when_done);
-                }
                 if (copy) {
                     result = install_package(copy, wipe_cache, TEMPORARY_INSTALL_FILE);
                     free(copy);
@@ -768,9 +760,6 @@ update_directory(const char* path, const char* unmount_when_done,
                 }
             } else {
                 result = install_package(new_path, wipe_cache, TEMPORARY_INSTALL_FILE);
-                if (unmount_when_done != NULL) {
-                    ensure_path_unmounted(unmount_when_done);
-                }
             }
             break;
         }
@@ -781,9 +770,6 @@ update_directory(const char* path, const char* unmount_when_done,
     free(zips);
     free(headers);
 
-    if (unmount_when_done != NULL) {
-        ensure_path_unmounted(unmount_when_done);
-    }
     return result;
 }
 
@@ -893,6 +879,73 @@ static int enter_sideload_mode(int status, int* wipe_cache, Device* device) {
     return status;
 }
 
+static int
+show_apply_update_menu(Device* device) {
+    static const char* headers[] = { "Apply update", NULL };
+    char* menu_items[MAX_NUM_MANAGED_VOLUMES + 1 + 1];
+    storage_item* items = get_storage_items();
+
+    int item_sideload = 0;
+    menu_items[item_sideload] = strdup("Apply from ADB");
+
+    int n;
+    for (n = 0; items[n].label; ++n) {
+        menu_items[n+1] = (char*)malloc(256);
+        sprintf(menu_items[n+1], "Choose from %s", items[n].label);
+    }
+    int item_back = n+1;
+    menu_items[item_back] = strdup("Go back");
+    menu_items[item_back+1] = NULL;
+
+    int wipe_cache;
+    int status = INSTALL_ERROR;
+
+    for (;;) {
+        int chosen = get_menu_selection(headers, menu_items, 0, 0, device);
+        if (chosen == item_back) {
+            break;
+        }
+        if (chosen == item_sideload) {
+            status = enter_sideload_mode(status, &wipe_cache, device);
+        }
+        else {
+            storage_item* item = &items[chosen-1];
+            status = ensure_volume_mounted(item->vol);
+            if (status == 0) {
+                status = update_directory(item->path, &wipe_cache, device);
+            }
+            else {
+                status = INSTALL_ERROR;
+            }
+            ensure_volume_unmounted(item->vol);
+        }
+        if (status == INSTALL_SUCCESS && wipe_cache) {
+            ui->Print("\n-- Wiping cache (at package request)...\n");
+            if (erase_volume("/cache")) {
+                ui->Print("Cache wipe failed.\n");
+            } else {
+                ui->Print("Cache wipe complete.\n");
+            }
+        }
+        if (status >= 0) {
+            if (status != INSTALL_SUCCESS) {
+                ui->SetBackground(RecoveryUI::ERROR);
+                ui->Print("Installation aborted.\n");
+            } else if (!ui->IsTextVisible()) {
+                break;
+            }
+            else {
+                ui->Print("\nInstallation complete.\n");
+            }
+        }
+    }
+
+out:
+    free_storage_items(items);
+
+    return status;
+}
+
 int ui_root_menu = 0;
 
 static void
@@ -947,54 +1000,9 @@ prompt_and_wait(Device* device, int status) {
                     if (!ui->IsTextVisible()) return;
                     break;
 
-                case Device::APPLY_EXT:
-                    status = update_directory(SDCARD_ROOT, SDCARD_ROOT, &wipe_cache, device);
-                    if (status == INSTALL_SUCCESS && wipe_cache) {
-                        ui->Print("\n-- Wiping cache (at package request)...\n");
-                        if (erase_volume("/cache")) {
-                            ui->Print("Cache wipe failed.\n");
-                        } else {
-                            ui->Print("Cache wipe complete.\n");
-                        }
-                    }
-                    if (status >= 0) {
-                        if (status != INSTALL_SUCCESS) {
-                            ui->SetBackground(RecoveryUI::ERROR);
-                            ui->Print("Installation aborted.\n");
-                        } else if (!ui->IsTextVisible()) {
-                            return;  // reboot if logs aren't visible
-                        } else {
-                            ui->Print("\nInstall from sdcard complete.\n");
-                        }
-                    }
-                    break;
-
-                case Device::APPLY_CACHE:
-                    // Don't unmount cache at the end of this.
-                    status = update_directory(CACHE_ROOT, NULL, &wipe_cache, device);
-                    if (status == INSTALL_SUCCESS && wipe_cache) {
-                        ui->Print("\n-- Wiping cache (at package request)...\n");
-                        if (erase_volume("/cache")) {
-                            ui->Print("Cache wipe failed.\n");
-                        } else {
-                            ui->Print("Cache wipe complete.\n");
-                        }
-                    }
-                    if (status >= 0) {
-                        if (status != INSTALL_SUCCESS) {
-                            ui->SetBackground(RecoveryUI::ERROR);
-                            ui->Print("Installation aborted.\n");
-                        } else if (!ui->IsTextVisible()) {
-                            return;  // reboot if logs aren't visible
-                        } else {
-                            ui->Print("\nInstall from cache complete.\n");
-                        }
-                    }
-                    break;
-
-                case Device::APPLY_ADB_SIDELOAD:
-                    status = enter_sideload_mode(status, &wipe_cache, device);
-                    if (!ui->IsTextVisible()) {
+                case Device::APPLY_UPDATE:
+                    status = show_apply_update_menu(device);
+                    if (status == INSTALL_SUCCESS && !ui->IsTextVisible()) {
                         return;  // reboot if logs aren't visible
                     }
                     break;
@@ -1176,7 +1184,7 @@ main(int argc, char **argv) {
     printf("Starting recovery on %s", ctime(&start));
 
     load_volume_table();
-    vold_client_start(&v_callbacks, 1);
+    vold_client_start(&v_callbacks, 0);
     vold_set_automount(1);
     ensure_path_mounted(LAST_LOG_FILE);
     rotate_last_logs(10);
