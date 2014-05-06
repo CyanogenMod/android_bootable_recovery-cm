@@ -133,6 +133,7 @@ static int append_eod(const char* opt_hash)
 static int do_backup_tree(const String8& path)
 {
     int rc = 0;
+    bool path_is_data = !strcmp(path.string(), "/data");
     DIR *dp;
 
     dp = opendir(path.string());
@@ -141,15 +142,33 @@ static int do_backup_tree(const String8& path)
         if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")) {
             continue;
         }
+        if (path_is_data && !strcmp(de->d_name, "media") && is_data_media()) {
+            logmsg("do_backup_tree: skipping datamedia\n");
+            continue;
+        }
         struct stat st;
         String8 filepath(path);
         filepath += "/";
         filepath += de->d_name;
 
         memset(&st, 0, sizeof(st));
-        stat(filepath.string(), &st);
+        rc = lstat(filepath.string(), &st);
+        if (rc != 0) {
+            logmsg("do_backup_tree: path=%s, lstat failed, rc=%d\n", path.string(), rc);
+            break;
+        }
+
+        if (!(S_ISREG(st.st_mode) || S_ISDIR(st.st_mode) || S_ISLNK(st.st_mode))) {
+            logmsg("do_backup_tree: path=%s, ignoring special file\n", path.string());
+            continue;
+        }
 
         if (S_ISDIR(st.st_mode)) {
+            rc = tar_append_file(tar, filepath.string(), filepath.string());
+            if (rc != 0) {
+                logmsg("do_backup_tree: path=%s, tar_append_file failed, rc=%d\n", path.string(), rc);
+                break;
+            }
             rc = do_backup_tree(filepath);
             if (rc != 0) {
                 logmsg("do_backup_tree: path=%s, recursion failed, rc=%d\n", path.string(), rc);
