@@ -62,6 +62,10 @@ int is_data_media();
 storage_item* get_storage_items();
 void free_storage_items(storage_item* items);
 
+#ifdef USE_F2FS
+extern int make_f2fs_main(int argc, char **argv);
+#endif
+
 #ifdef __cplusplus
 }
 #endif
