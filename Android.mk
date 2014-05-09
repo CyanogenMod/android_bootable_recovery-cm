@@ -87,6 +87,11 @@ ifeq ($(TARGET_USERIMAGES_USE_EXT4), true)
     LOCAL_STATIC_LIBRARIES += libext4_utils_static libz
 endif
 
+ifeq ($(TARGET_USERIMAGES_USE_F2FS), true)
+    LOCAL_CFLAGS += -DUSE_F2FS
+    LOCAL_STATIC_LIBRARIES += libmake_f2fs libfsck_f2fs libfibmap_f2fs
+endif
+
 LOCAL_CFLAGS += -DUSE_EXT4 -DMINIVOLD
 LOCAL_C_INCLUDES += system/extras/ext4_utils system/core/fs_mgr/include external/fsck_msdos
 LOCAL_C_INCLUDES += system/vold
@@ -111,6 +116,10 @@ include $(BUILD_EXECUTABLE)
 
 # Symlinks
 RECOVERY_LINKS := busybox getprop reboot sdcard setup_adbd setprop start stop vdc
+
+ifeq ($(TARGET_USERIMAGES_USE_F2FS), true)
+    RECOVERY_LINKS += mkfs.f2fs fsck.f2fs fibmap.f2fs
+endif
 
 # nc is provided by external/netcat
 RECOVERY_SYMLINKS := $(addprefix $(TARGET_RECOVERY_ROOT_OUT)/sbin/,$(RECOVERY_LINKS))
@@ -154,6 +163,10 @@ ifeq ($(TARGET_USERIMAGES_USE_EXT4), true)
     LOCAL_CFLAGS += -DUSE_EXT4
     LOCAL_C_INCLUDES += system/extras/ext4_utils
     LOCAL_STATIC_LIBRARIES += libext4_utils_static libz
+endif
+ifeq ($(TARGET_USERIMAGES_USE_F2FS), true)
+    LOCAL_CFLAGS += -DUSE_F2FS
+    LOCAL_STATIC_LIBRARIES += libmake_f2fs libfsck_f2fs libfibmap_f2fs
 endif
 LOCAL_STATIC_LIBRARIES += \
     libsparse_static \
