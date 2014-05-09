@@ -172,7 +172,6 @@ LOCAL_STATIC_LIBRARIES += \
     libc
 
 LOCAL_C_INCLUDES +=         	\
-    bootable/simplerecovery    	\
     system/core/fs_mgr/include	\
     system/core/include     	\
     system/core/libcutils       \
