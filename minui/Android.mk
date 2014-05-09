@@ -15,8 +15,10 @@ ifeq ($(call is-vendor-board-platform,QCOM),true)
   common_cflags += -DMSMFB_OVERLAY
 endif
 
+ifneq ($(TARGET_RECOVERY_NO_MSM_BSP), true)
 ifeq ($(TARGET_USES_QCOM_BSP), true)
     common_cflags += -DMSM_BSP
+endif
 endif
 
 ifeq ($(subst ",,$(TARGET_RECOVERY_PIXEL_FORMAT)),RGBX_8888)
