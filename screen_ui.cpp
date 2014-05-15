@@ -197,7 +197,7 @@ int ScreenRecoveryUI::draw_header_icon()
     gr_surface surface = headerIcon;
     int iw = gr_get_width(surface);
     int ih = gr_get_height(surface);
-    int ix = (gr_fb_width() - iw) / 2;
+    int ix = 25;
     int iy = 0;
     int header_pos_y = 0;
     int header_width = gr_get_width(surface);
@@ -213,11 +213,11 @@ void ScreenRecoveryUI::draw_menu_item(int textrow, const char *text, int selecte
         gr_fill(0, (textrow)*char_height,
                 gr_fb_width(), (textrow+3)*char_height-1);
         SetColor(MENU_SEL_FG);
-        gr_text(4, (textrow+1)*char_height-1, text, 0);
+        gr_text(25, (textrow+1)*char_height-1, text, 0);
         SetColor(MENU);
     }
     else {
-        gr_text(4, (textrow+1)*char_height-1, text, 0);
+        gr_text(25, (textrow+1)*char_height-1, text, 0);
     }
 
 #ifdef WANT_SEPARATORS
