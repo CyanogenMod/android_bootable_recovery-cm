@@ -55,6 +55,11 @@ extern "C" {
 
 struct selabel_handle *sehandle;
 
+#define OEM_LOCK_NONE   0
+#define OEM_LOCK_UNLOCK 1
+
+static int oem_lock = OEM_LOCK_NONE;
+
 static const struct option OPTIONS[] = {
   { "send_intent", required_argument, NULL, 's' },
   { "update_package", required_argument, NULL, 'u' },
@@ -66,6 +71,7 @@ static const struct option OPTIONS[] = {
   { "locale", required_argument, NULL, 'l' },
   { "sideload", no_argument, NULL, 'a' },
   { "shutdown_after", no_argument, NULL, 'p' },
+  { "oemunlock", no_argument, &oem_lock, OEM_LOCK_UNLOCK },
   { NULL, 0, NULL, 0 },
 };
 
@@ -364,7 +370,7 @@ typedef struct _saved_log_file {
 } saved_log_file;
 
 static int
-erase_volume(const char *volume) {
+erase_volume(const char *volume, bool force = false) {
     bool is_cache = (strcmp(volume, CACHE_ROOT) == 0);
 
     ui->SetBackground(RecoveryUI::ERASING);
@@ -372,7 +378,7 @@ erase_volume(const char *volume) {
 
     saved_log_file* head = NULL;
 
-    if (is_cache) {
+    if (!force && is_cache) {
         // If we're reformatting /cache, we load any
         // "/cache/recovery/last*" files into memory, so we can restore
         // them after the reformat.
@@ -421,9 +427,9 @@ erase_volume(const char *volume) {
     if (volume[0] == '/') {
         ensure_path_unmounted(volume);
     }
-    int result = format_volume(volume);
+    int result = format_volume(volume, force);
 
-    if (is_cache) {
+    if (!force && is_cache) {
         while (head) {
             FILE* f = fopen_path(head->name, "wb");
             if (f) {
@@ -1272,7 +1278,14 @@ main(int argc, char **argv) {
 
     int status = INSTALL_SUCCESS;
 
-    if (update_package != NULL) {
+    if (oem_lock == OEM_LOCK_UNLOCK) {
+        if (device->WipeData()) status = INSTALL_ERROR;
+        if (erase_volume("/data", true)) status = INSTALL_ERROR;
+        if (wipe_cache && erase_volume("/cache", true)) status = INSTALL_ERROR;
+        if (status != INSTALL_SUCCESS) ui->Print("Data wipe failed.\n");
+        // Force reboot regardless of actual status
+        status = INSTALL_SUCCESS;
+    } else if (update_package != NULL) {
         status = install_package(update_package, &wipe_cache, TEMPORARY_INSTALL_FILE);
         if (status == INSTALL_SUCCESS && wipe_cache) {
             if (erase_volume("/cache")) {
