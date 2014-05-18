@@ -894,7 +894,7 @@ static int enter_sideload_mode(int status, int* wipe_cache, Device* device) {
 
 static int
 show_apply_update_menu(Device* device) {
-    static const char* headers[] = { "Apply update", NULL };
+    static const char* headers[] = { "Apply update", "", NULL };
     char* menu_items[MAX_NUM_MANAGED_VOLUMES + 1 + 1];
     storage_item* items = get_storage_items();
 
@@ -906,16 +906,13 @@ show_apply_update_menu(Device* device) {
         menu_items[n+1] = (char*)malloc(256);
         sprintf(menu_items[n+1], "Choose from %s", items[n].label);
     }
-    int item_back = n+1;
-    menu_items[item_back] = strdup("Go back");
-    menu_items[item_back+1] = NULL;
 
     int wipe_cache;
     int status = INSTALL_ERROR;
 
     for (;;) {
         int chosen = get_menu_selection(headers, menu_items, 0, 0, device);
-        if (chosen == item_back) {
+        if (chosen == Device::kGoBack) {
             break;
         }
         if (chosen == item_sideload) {
