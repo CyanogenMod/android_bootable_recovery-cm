@@ -906,6 +906,7 @@ show_apply_update_menu(Device* device) {
         menu_items[n+1] = (char*)malloc(256);
         sprintf(menu_items[n+1], "Choose from %s", items[n].label);
     }
+    menu_items[n+1] = NULL;
 
     int wipe_cache;
     int status = INSTALL_ERROR;
