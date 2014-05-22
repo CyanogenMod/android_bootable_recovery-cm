@@ -736,14 +736,16 @@ update_directory(const char* path, int* wipe_cache, Device* device) {
     int chosen_item = 0;
     do {
         chosen_item = get_menu_selection(headers, zips, 1, chosen_item, device);
-
-        char* item = zips[chosen_item];
-        int item_len = strlen(item);
-        if (chosen_item == 0) {          // item 0 is always "../"
+        // item 0 is always "../"
+        if (chosen_item == 0 || chosen_item == Device::kGoBack) {
             // go up but continue browsing (if the caller is update_directory)
             result = -1;
             break;
-        } else if (item[item_len-1] == '/') {
+        }
+
+        char* item = zips[chosen_item];
+        int item_len = strlen(item);
+        if (item[item_len-1] == '/') {
             // recurse down into a subdirectory
             char new_path[PATH_MAX];
             strlcpy(new_path, path, PATH_MAX);
