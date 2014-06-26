@@ -971,10 +971,10 @@ show_apply_update_menu(Device* device) {
         }
     }
     if (status >= 0) {
-        if (status != INSTALL_SUCCESS) {
+        if (status != INSTALL_SUCCESS && chosen != item_sideload) {
             ui->SetBackground(RecoveryUI::ERROR);
             ui->Print("Installation aborted.\n");
-        } else if (ui->IsTextVisible()) {
+        } else if (status == INSTALL_SUCCESS && ui->IsTextVisible()) {
             ui->Print("\nInstallation complete.\n");
         }
     }
