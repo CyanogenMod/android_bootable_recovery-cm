@@ -195,8 +195,10 @@ minui_backend* open_overlay() {
 
 bool isTargetMdp5()
 {
+#ifdef MSM_BSP
     if (isMDP5)
         return true;
+#endif
 
     return false;
 }
