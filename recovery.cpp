@@ -632,8 +632,8 @@ get_menu_selection(const char* const * headers, const char* const * items,
                 ui->EndMenu();
                 return 0; // XXX fixme
             }
-        } else if (key == -2) { // we are returning from ui_cancel_wait_key(): trigger a GO_BACK
-            return Device::kGoBack;
+        } else if (key == -2) { // we are returning from ui_cancel_wait_key(): no action
+            return Device::kNoAction;
         }
         else if (key == -6) {
             return Device::kRefresh;
@@ -920,7 +920,7 @@ wipe_media(int confirm, Device* device) {
     ui->Print("Media wipe complete.\n");
 }
 
-static int enter_sideload_mode(int status, int* wipe_cache, Device* device) {
+static int enter_sideload_mode(int* wipe_cache, Device* device) {
 
     ensure_path_mounted(CACHE_ROOT);
     start_sideload(ui);
@@ -932,11 +932,13 @@ static int enter_sideload_mode(int status, int* wipe_cache, Device* device) {
 
     static const char* list[] = { "Cancel sideload", NULL };
 
+    int status = INSTALL_NONE;
     int item = get_menu_selection(headers, list, 0, 0, device);
-    if (item != 0)
+    stop_sideload();
+    if (item == Device::kNoAction)
         status = apply_from_adb(wipe_cache, TEMPORARY_INSTALL_FILE);
 
-    if (status >= 0) {
+    if (status >= 0 && status != INSTALL_NONE) {
         if (status != INSTALL_SUCCESS) {
             ui->SetBackground(RecoveryUI::ERROR);
             ui->Print("Installation aborted.\n");
@@ -973,7 +975,7 @@ show_apply_update_menu(Device* device) {
         goto out;
     }
     if (chosen == item_sideload) {
-        status = enter_sideload_mode(status, &wipe_cache, device);
+        status = enter_sideload_mode(&wipe_cache, device);
     }
     else {
         storage_item* item = &items[chosen-1];
@@ -996,7 +998,7 @@ show_apply_update_menu(Device* device) {
                 ui->DialogDismiss();
         }
     }
-    if (status >= 0) {
+    if (status >= 0 && status != INSTALL_NONE) {
         if (status != INSTALL_SUCCESS) {
             ui->SetBackground(RecoveryUI::ERROR);
             ui->Print("Installation aborted.\n");
@@ -1397,7 +1399,7 @@ main(int argc, char **argv) {
         if (erase_volume("media")) status = INSTALL_ERROR;
         if (status != INSTALL_SUCCESS) ui->Print("Media wipe failed.\n");
     } else if (sideload) {
-        status = enter_sideload_mode(status, &wipe_cache, device);
+        status = enter_sideload_mode(&wipe_cache, device);
     } else if (!just_exit) {
         status = INSTALL_NONE;  // No command specified
         ui->SetBackground(RecoveryUI::NO_COMMAND);

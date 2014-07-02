@@ -111,11 +111,8 @@ start_sideload(RecoveryUI* ui_) {
     pthread_create(&sideload_thread, NULL, &adb_sideload_thread, &waiter);
 }
 
-int
-apply_from_adb(int* wipe_cache, const char* install_file) {
-
-    int ret = INSTALL_ERROR;
-
+void
+stop_sideload() {
     set_perf_mode(true);
 
     set_usb_driver(false);
@@ -127,18 +124,22 @@ apply_from_adb(int* wipe_cache, const char* install_file) {
     ui->FlushKeys();
 
     set_perf_mode(false);
+}
+
+int
+apply_from_adb(int* wipe_cache, const char* install_file) {
 
     struct stat st;
     if (stat(ADB_SIDELOAD_FILENAME, &st) != 0) {
         if (errno == ENOENT) {
             ui->Print("No package received.\n");
-        } else {
-            ui->Print("Error reading package:\n  %s\n", strerror(errno));
+            return INSTALL_NONE; // Go back / Cancel
         }
-        return ret;
+        ui->Print("Error reading package:\n  %s\n", strerror(errno));
+        return INSTALL_ERROR;
     }
 
-    ret = install_package(ADB_SIDELOAD_FILENAME, wipe_cache, install_file);
+    int ret = install_package(ADB_SIDELOAD_FILENAME, wipe_cache, install_file);
 
     remove(ADB_SIDELOAD_FILENAME);
 
