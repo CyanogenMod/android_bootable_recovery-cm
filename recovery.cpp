@@ -932,11 +932,13 @@ static int enter_sideload_mode(int status, int* wipe_cache, Device* device) {
 
     static const char* list[] = { "Cancel sideload", NULL };
 
+    status = INSTALL_NONE;
     int item = get_menu_selection(headers, list, 0, 0, device);
+    stop_sideload();
     if (item != 0)
         status = apply_from_adb(wipe_cache, TEMPORARY_INSTALL_FILE);
 
-    if (status >= 0) {
+    if (status >= 0 && status != INSTALL_NONE) {
         if (status != INSTALL_SUCCESS) {
             ui->SetBackground(RecoveryUI::ERROR);
             ui->Print("Installation aborted.\n");
@@ -996,7 +998,7 @@ show_apply_update_menu(Device* device) {
                 ui->DialogDismiss();
         }
     }
-    if (status >= 0) {
+    if (status >= 0 && status != INSTALL_NONE) {
         if (status != INSTALL_SUCCESS) {
             ui->SetBackground(RecoveryUI::ERROR);
             ui->Print("Installation aborted.\n");
