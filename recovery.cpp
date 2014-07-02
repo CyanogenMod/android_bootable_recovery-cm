@@ -909,17 +909,18 @@ static int enter_sideload_mode(int status, int* wipe_cache, Device* device) {
     static const char* list[] = { "Cancel sideload", NULL };
 
     int item = get_menu_selection(headers, list, 0, 0, device);
-    if (item != 0)
+    stop_sideload();
+    if (item != 0) {
         status = apply_from_adb(wipe_cache, TEMPORARY_INSTALL_FILE);
-
-    if (status >= 0) {
-        if (status != INSTALL_SUCCESS) {
-            ui->SetBackground(RecoveryUI::ERROR);
-            ui->Print("Installation aborted.\n");
-        } else if (!ui->IsTextVisible()) {
-            return status;  // reboot if logs aren't visible
-        } else {
-            ui->Print("\nInstall from ADB complete.\n");
+        if (status >= 0) {
+            if (status != INSTALL_SUCCESS) {
+                ui->SetBackground(RecoveryUI::ERROR);
+                ui->Print("Installation aborted.\n");
+            } else if (!ui->IsTextVisible()) {
+                return status;  // reboot if logs aren't visible
+            } else {
+                ui->Print("\nInstall from ADB complete.\n");
+            }
         }
     }
     return status;

@@ -111,13 +111,8 @@ start_sideload(RecoveryUI* ui_) {
     pthread_create(&sideload_thread, NULL, &adb_sideload_thread, &waiter);
 }
 
-int
-apply_from_adb(int* wipe_cache, const char* install_file) {
-
-    int ret = INSTALL_ERROR;
-
-    set_perf_mode(true);
-
+void
+stop_sideload() {
     set_usb_driver(false);
     maybe_restart_adbd();
 
@@ -125,8 +120,12 @@ apply_from_adb(int* wipe_cache, const char* install_file) {
     kill(waiter.child, SIGTERM);
     pthread_join(sideload_thread, NULL);
     ui->FlushKeys();
+}
 
-    set_perf_mode(false);
+int
+apply_from_adb(int* wipe_cache, const char* install_file) {
+
+    int ret = INSTALL_ERROR;
 
     struct stat st;
     if (stat(ADB_SIDELOAD_FILENAME, &st) != 0) {
