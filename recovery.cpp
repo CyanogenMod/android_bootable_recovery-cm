@@ -933,6 +933,7 @@ static int enter_sideload_mode(int status, int* wipe_cache, Device* device) {
     static const char* list[] = { "Cancel sideload", NULL };
 
     int item = get_menu_selection(headers, list, 0, 0, device);
+    stop_sideload();
     if (item != 0)
         status = apply_from_adb(wipe_cache, TEMPORARY_INSTALL_FILE);
 
