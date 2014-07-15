@@ -31,7 +31,137 @@ static int set_bootloader_message_mtd(const struct bootloader_message *in, const
 static int get_bootloader_message_block(struct bootloader_message *out, const fstab_rec* v);
 static int set_bootloader_message_block(const struct bootloader_message *in, const fstab_rec* v);
 
+#ifdef RECOVERY_CUSTOM_BCB
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/select.h>
+#include <stdlib.h>
+#ifndef min
+#define min(a,b) ((a)<(b)?(a):(b))
+#endif
+#ifndef max
+#define max(a,b) ((a)<(b)?(b):(a))
+#endif
+#define PIPE_R 0
+#define PIPE_W 1
+struct buf
+{
+    size_t len;
+    unsigned char* data;
+};
+static int childpid;
+static void sig_child(int sig)
+{
+    pid_t pid;
+    int status;
+    pid = waitpid(childpid, &status, WNOHANG);
+    if (pid == childpid) {
+        childpid = -1;
+    }
+}
+static int exec_child(const char** argv, struct buf* ibuf, struct buf* obuf)
+{
+    int rc = -1;
+    int childin[2];
+    int childout[2];
+
+    childin[0] = childin[1] = -1;
+    childout[0] = childout[1] = -1;
+    if (pipe(childin) != 0) {
+        goto bail;
+    }
+    if (pipe(childout) != 0) {
+        goto bail;
+    }
+    signal(SIGCHLD, sig_child);
+    childpid = fork();
+    if (childpid < 0) {
+        goto bail;
+    }
+    if (childpid == 0) {
+        close(childin[PIPE_W]);
+        close(childout[PIPE_R]);
+        close(STDIN_FILENO);
+        dup2(childin[PIPE_R], STDIN_FILENO);
+        close(STDOUT_FILENO);
+        dup2(childout[PIPE_W], STDOUT_FILENO);
+        execve(argv[0], (char * const *)argv, NULL);
+        exit(-1); /* NOTREACHED */
+    }
+    close(childin[PIPE_R]);
+    childin[PIPE_R] = -1;
+    close(childout[PIPE_W]);
+    childout[PIPE_W] = -1;
+
+    while (childpid != -1) {
+        fd_set fdsr, fdsw;
+        int fdmax = 0;
+        FD_ZERO(&fdsr);
+        if (ibuf) {
+            FD_SET(childout[PIPE_R], &fdsr);
+            fdmax = max(fdmax, childout[PIPE_R]);
+        }
+        FD_ZERO(&fdsw);
+        if (obuf) {
+            FD_SET(childin[PIPE_W], &fdsw);
+            fdmax = max(fdmax, childin[PIPE_W]);
+        }
+        rc = select(fdmax+1, &fdsr, &fdsw, NULL, NULL);
+        if (rc > 0) {
+            if (FD_ISSET(childin[PIPE_W], &fdsw)) {
+                rc = write(childin[PIPE_W], obuf->data, obuf->len);
+                if (rc > 0) {
+                    obuf->len -= rc;
+                }
+                if (rc <= 0 || obuf->len == 0) {
+                    obuf = NULL;
+                    close(childin[PIPE_W]);
+                    childin[PIPE_W] = -1;
+                }
+            }
+            if (FD_ISSET(childout[PIPE_R], &fdsr)) {
+                rc = read(childout[PIPE_R], ibuf->data, ibuf->len);
+                if (rc > 0) {
+                    ibuf->len += rc;
+                    //XXX: dont overflow ibuf->data
+                }
+                if (rc <= 0) {
+                    ibuf = NULL;
+                    close(childout[PIPE_R]);
+                    childout[PIPE_R] = -1;
+                }
+            }
+        }
+    }
+    rc = 0;
+
+bail:
+    signal(SIGCHLD, SIG_DFL);
+    close(childout[PIPE_W]);
+    close(childout[PIPE_R]);
+    close(childin[PIPE_W]);
+    close(childin[PIPE_R]);
+    return rc;
+}
+#endif
+
 int get_bootloader_message(struct bootloader_message *out) {
+#ifdef RECOVERY_CUSTOM_BCB
+    const char* argv[3];
+    int argc = 0;
+    struct buf buf;
+    int rc;
+    argv[argc++] = "/sbin/bcb";
+    argv[argc++] = "--get";
+    argv[argc++] = NULL;
+    buf.len = 1024;
+    buf.data = (unsigned char*)malloc(buf.len);
+    memset(buf.data, 0, buf.len);
+    rc = exec_child(argv, &buf, NULL);
+    memcpy(out->recovery, buf.data, buf.len);
+    free(buf.data);
+    return rc;
+#else
     fstab_rec* v = volume_for_path("/misc");
     if (v == NULL) {
       return -1;
@@ -43,9 +173,26 @@ int get_bootloader_message(struct bootloader_message *out) {
     }
     LOGE("unknown misc partition fs_type \"%s\"\n", v->fs_type);
     return -1;
+#endif
 }
 
 int set_bootloader_message(const struct bootloader_message *in) {
+#ifdef RECOVERY_CUSTOM_BCB
+    const char* argv[3];
+    int argc = 0;
+    struct buf buf;
+    int rc;
+    argv[argc++] = "/sbin/bcb";
+    argv[argc++] = "--set";
+    argv[argc++] = NULL;
+    buf.len = sizeof(in->recovery);
+    buf.data = (unsigned char*)malloc(buf.len);
+    memset(buf.data, 0, buf.len);
+    memcpy(buf.data, in->recovery, sizeof(in->recovery));
+    rc = exec_child(argv, NULL, &buf);
+    free(buf.data);
+    return rc;
+#else
     fstab_rec* v = volume_for_path("/misc");
     if (v == NULL) {
       return -1;
@@ -57,6 +204,7 @@ int set_bootloader_message(const struct bootloader_message *in) {
     }
     LOGE("unknown misc partition fs_type \"%s\"\n", v->fs_type);
     return -1;
+#endif
 }
 
 // ------------------------------

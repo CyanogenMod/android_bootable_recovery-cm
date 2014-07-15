@@ -107,6 +107,16 @@ ifneq ($(BOARD_RECOVERY_BLDRMSG_OFFSET),)
     LOCAL_CFLAGS += -DBOARD_RECOVERY_BLDRMSG_OFFSET=$(BOARD_RECOVERY_BLDRMSG_OFFSET)
 endif
 
+# Allow device specific custom BCB.  The implementation is as follows:
+#  * The BCB binary must be placed at /sbin/bcb in the recovery image.
+#  * If called with the argument "--set", copy parameters from stdin to BCB.
+#  * Otherwise copy BCB parameters to stdout.
+#  * Any other device specific requirements may be performed, such as
+#    resetting a boot-to-recovery flag in NVRAM, etc.
+ifeq ($(BOARD_CUSTOM_RECOVERY_BCB),true)
+    LOCAL_CFLAGS += -DRECOVERY_CUSTOM_BCB
+endif
+
 # This binary is in the recovery ramdisk, which is otherwise a copy of root.
 # It gets copied there in config/Makefile.  LOCAL_MODULE_TAGS suppresses
 # a (redundant) copy of the binary in /system/bin for user builds.
