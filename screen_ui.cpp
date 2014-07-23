@@ -340,7 +340,7 @@ void ScreenRecoveryUI::update_screen_locked()
 // Should only be called with updateMutex locked.
 void ScreenRecoveryUI::update_progress_locked()
 {
-    if (show_text || !pagesIdentical) {
+    if (!pagesIdentical) {
         draw_screen_locked();    // Must redraw the whole screen
         pagesIdentical = true;
     } else {
@@ -366,7 +366,7 @@ void ScreenRecoveryUI::progress_loop() {
         // update the installation animation, if active
         // skip this if we have a text overlay (too expensive to update)
         if ((currentIcon == INSTALLING_UPDATE || currentIcon == ERASING) &&
-            installing_frames > 0 && !show_text) {
+            installing_frames > 0) {
             installingFrame = (installingFrame + 1) % installing_frames;
             redraw = 1;
         }
