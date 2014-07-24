@@ -83,6 +83,38 @@ int is_data_media()
     return is_datamedia;
 }
 
+static int is_volume_primary_storage(fstab_rec* v)
+{
+    // Static mount point /sdcard is primary storage, except when it's
+    // declared as datamedia
+    if (strcmp(v->mount_point, "/sdcard") == 0) {
+        if (strcmp(v->fs_type, "datamedia") == 0) {
+            return 0;
+        }
+        return 1;
+    }
+
+    // Static mount points beginning with /mnt/media_rw/sdcard are primary
+    // storage except when a non-zero digit follows (eg. sdcard[1-9])
+    if (strncmp(v->mount_point, "/mnt/media_rw/sdcard", 20) == 0) {
+        if (v->mount_point[20] >= '1' && v->mount_point[20] <= '9') {
+            return 0;
+        }
+        return 1;
+    }
+
+    // Dynamic mount points beginning with sdcard are primary storage
+    // except when a non-zero digit follows (eg. sdcard[1-9])
+    if (fs_mgr_is_voldmanaged(v) && strncmp(v->label, "sdcard", 6) == 0) {
+        if (v->label[6] >= '1' && v->label[6] <= '9') {
+            return 0;
+        }
+        return 1;
+    }
+
+    return 0;
+}
+
 void load_volume_table()
 {
     int i;
@@ -120,10 +152,7 @@ void load_volume_table()
 
         write_fstab_entry(v, file);
 
-        if (strcmp(v->mount_point, "/external_sd") == 0 ||
-                strncmp(v->mount_point, "/sdcard", 7) == 0 ||
-                strncmp(v->mount_point, "/mnt/media_rw/sdcard", 20) == 0 ||
-                (fs_mgr_is_voldmanaged(v) && strncmp(v->label, "sdcard", 6) == 0)) {
+        if (is_volume_primary_storage(v)) {
             is_datamedia = 0;
         }
     }
