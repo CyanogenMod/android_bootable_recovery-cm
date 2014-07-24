@@ -120,10 +120,9 @@ void load_volume_table()
 
         write_fstab_entry(v, file);
 
-        if (strcmp(v->mount_point, "/external_sd") == 0 ||
-                strncmp(v->mount_point, "/sdcard", 7) == 0 ||
-                strncmp(v->mount_point, "/mnt/media_rw/sdcard", 20) == 0 ||
-                (fs_mgr_is_voldmanaged(v) && strncmp(v->label, "sdcard", 6) == 0)) {
+        if (strncmp(v->mount_point, "/mnt/media_rw/sdcard0", 21) == 0 ||
+                (strcmp(v->mount_point, "/sdcard") == 0 && strcmp(v->fs_type, "datamedia") != 0) ||
+                (fs_mgr_is_voldmanaged(v) && strncmp(v->label, "sdcard0", 7) == 0)) {
             is_datamedia = 0;
         }
     }
