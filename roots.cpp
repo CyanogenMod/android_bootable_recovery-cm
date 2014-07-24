@@ -57,10 +57,13 @@ static int mkdir_p(const char* path, mode_t mode)
 
 static void write_fstab_entry(fstab_rec *v, FILE *file)
 {
-    if (NULL != v && strcmp(v->fs_type, "mtd") != 0 && strcmp(v->fs_type, "emmc") != 0
-                  && strcmp(v->fs_type, "bml") != 0 && !fs_mgr_is_voldmanaged(v)
-                  && strncmp(v->blk_device, "/", 1) == 0
-                  && strncmp(v->mount_point, "/", 1) == 0) {
+    if (v == NULL || file == NULL)
+        return;
+
+    if (strcmp(v->fs_type, "mtd") != 0 && strcmp(v->fs_type, "emmc") != 0
+          && strcmp(v->fs_type, "bml") != 0 && !fs_mgr_is_voldmanaged(v)
+          && strncmp(v->blk_device, "/", 1) == 0
+          && strncmp(v->mount_point, "/", 1) == 0) {
 
         fprintf(file, "%s ", v->blk_device);
         fprintf(file, "%s ", v->mount_point);
@@ -106,7 +109,6 @@ void load_volume_table()
     FILE *file = fopen("/etc/fstab", "w");
     if (file == NULL) {
         LOGW("Unable to create /etc/fstab!\n");
-        return;
     }
 
     is_datamedia = 1;
@@ -128,7 +130,8 @@ void load_volume_table()
         }
     }
 
-    fclose(file);
+    if (file != NULL)
+        fclose(file);
 
     printf("\n");
 }
