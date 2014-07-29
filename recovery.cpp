@@ -27,6 +27,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -87,6 +88,42 @@ enum OemLockOp {
 static OemLockOp oem_lock = OEM_LOCK_NONE;
 
 #endif
+
+extern char **environ;
+
+static int __system(const char *cmd) {
+    pid_t pid;
+    sig_t intsave, quitsave;
+    sigset_t mask, omask;
+    int pstat;
+    char *argp[] = {"sh", "-c", NULL, NULL};
+
+    if (!cmd) /* just checking... */
+        return(1);
+
+    argp[2] = (char *)cmd;
+
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &mask, &omask);
+    switch (pid = vfork()) {
+        case -1: /* error */
+            sigprocmask(SIG_SETMASK, &omask, NULL);
+            return(-1);
+        case 0: /* child */
+            sigprocmask(SIG_SETMASK, &omask, NULL);
+            execve("/sbin/sh", argp, environ);
+            _exit(127);
+    }
+
+    intsave = (sig_t)  bsd_signal(SIGINT, SIG_IGN);
+    quitsave = (sig_t) bsd_signal(SIGQUIT, SIG_IGN);
+    pid = waitpid(pid, (int *)&pstat, 0);
+    sigprocmask(SIG_SETMASK, &omask, NULL);
+    (void)bsd_signal(SIGINT, intsave);
+    (void)bsd_signal(SIGQUIT, quitsave);
+    return (pid == -1 ? -1 : pstat);
+}
 
 static const struct option OPTIONS[] = {
   { "send_intent", required_argument, NULL, 's' },
@@ -1211,6 +1248,7 @@ main(int argc, char **argv) {
         }
         return busybox_driver(argc, argv);
     }
+    __system("/sbin/postrecoveryboot.sh");
 
     // Clear umask for packages that copy files out to /tmp and then over
     // to /system without properly setting all permissions (eg. gapps).
