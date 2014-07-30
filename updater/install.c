@@ -1503,6 +1503,9 @@ Value* SetStageFn(const char* name, State* state, int argc, Expr* argv[]) {
     // package installation.
     FILE* f = fopen(filename, "r+b");
     fseek(f, offsetof(struct bootloader_message, stage), SEEK_SET);
+#ifdef BOARD_RECOVERY_BLDRMSG_OFFSET
+    fseek(f, BOARD_RECOVERY_BLDRMSG_OFFSET, SEEK_CUR);
+#endif
     int to_write = strlen(stagestr)+1;
     int max_size = sizeof(((struct bootloader_message*)0)->stage);
     if (to_write > max_size) {
@@ -1529,6 +1532,9 @@ Value* GetStageFn(const char* name, State* state, int argc, Expr* argv[]) {
     char buffer[sizeof(((struct bootloader_message*)0)->stage)];
     FILE* f = fopen(filename, "rb");
     fseek(f, offsetof(struct bootloader_message, stage), SEEK_SET);
+#ifdef BOARD_RECOVERY_BLDRMSG_OFFSET
+    fseek(f, BOARD_RECOVERY_BLDRMSG_OFFSET, SEEK_CUR);
+#endif
     fread(buffer, sizeof(buffer), 1, f);
     fclose(f);
     buffer[sizeof(buffer)-1] = '\0';
