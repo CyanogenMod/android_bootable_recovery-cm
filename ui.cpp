@@ -423,7 +423,7 @@ void RecoveryUI::process_syn(input_device* dev, int code, int value) {
 
         /* Detect release */
         if (dev->saw_mt_report) {
-            if (!dev->saw_pos_x && !dev->saw_pos_y) {
+            if (dev->in_touch && !dev->saw_pos_x && !dev->saw_pos_y) {
                 /* type A release */
 #ifdef DEBUG_TOUCH
             LOGI("process_syn: type a release\n");
@@ -433,7 +433,7 @@ void RecoveryUI::process_syn(input_device* dev, int code, int value) {
             }
         }
         else {
-            if (dev->saw_tracking_id && dev->tracking_id == -1 &&
+            if (dev->in_touch && dev->saw_tracking_id && dev->tracking_id == -1 &&
                     dev->slot_current == dev->slot_first) {
                 /* type B release */
 #ifdef DEBUG_TOUCH
