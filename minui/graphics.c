@@ -438,8 +438,6 @@ int gr_init(void)
 
 #ifdef MSMFB_OVERLAY
     if (target_has_overlay()) {
-        if (isTargetMdp5())
-            setDisplaySplit();
         gr_backend = open_overlay();
     }
     else

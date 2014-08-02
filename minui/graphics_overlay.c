@@ -60,7 +60,7 @@ static gr_surface overlay_flip(minui_backend*);
 static void overlay_blank(minui_backend*, bool);
 static void overlay_exit(minui_backend*);
 
-static GRSurface gr_draw;
+static GRSurface* gr_draw = NULL;
 static struct fb_var_screeninfo vi;
 static int fb_fd = -1;
 
@@ -73,17 +73,19 @@ static minui_backend overlay_backend = {
 
 #ifdef MSM_BSP
 typedef struct {
+    unsigned char *mem_buf;
     int size;
     int ion_fd;
     int mem_fd;
     struct ion_handle_data handle_data;
+    int offset;
 } ion_mem_info;
 
 //Left and right overlay id
 static int overlayL_id = MSMFB_NEW_REQUEST;
 static int overlayR_id = MSMFB_NEW_REQUEST;
 static ion_mem_info mem_info;
-static isMDP5 = false;
+static bool isMDP5 = false;
 
 static int map_mdp_pixel_format()
 {
@@ -102,7 +104,7 @@ static int map_mdp_pixel_format()
 static int leftSplit = 0;
 static int rightSplit = 0;
 
-void setDisplaySplit() {
+static void setDisplaySplit() {
     char split[64] = {0};
     FILE* fp = fopen("/sys/class/graphics/fb0/msm_fb_split", "r");
     if (fp) {
@@ -122,7 +124,7 @@ void setDisplaySplit() {
         fclose(fp);
 }
 
-int getLeftSplit() {
+static int getLeftSplit() {
    //Default even split for all displays with high res
    int lSplit = vi.xres / 2;
 
@@ -133,11 +135,11 @@ int getLeftSplit() {
    return lSplit;
 }
 
-int getRightSplit() {
+static int getRightSplit() {
    return rightSplit;
 }
 
-bool isDisplaySplit() {
+static bool isDisplaySplit() {
     if (vi.xres > MAX_DISPLAY_DIM)
         return true;
     //check if right split is set by driver
@@ -147,11 +149,11 @@ bool isDisplaySplit() {
     return false;
 }
 
-int getFbXres() {
+static int getFbXres() {
     return vi.xres;
 }
 
-int getFbYres () {
+static int getFbYres () {
     return vi.yres;
 }
 
@@ -193,8 +195,7 @@ minui_backend* open_overlay() {
     return &overlay_backend;
 }
 
-bool isTargetMdp5()
-{
+static bool isTargetMdp5() {
 #ifdef MSM_BSP
     if (isMDP5)
         return true;
@@ -208,8 +209,8 @@ bool isTargetMdp5()
 static int free_ion_mem(void) {
     int ret = 0;
 
-    if (gr_draw.data)
-        munmap(gr_draw.data, mem_info.size);
+    if (mem_info.mem_buf)
+        munmap(mem_info.mem_buf, mem_info.size);
 
     if (mem_info.ion_fd >= 0) {
         ret = ioctl(mem_info.ion_fd, ION_IOC_FREE, &mem_info.handle_data);
@@ -241,7 +242,7 @@ static int alloc_ion_mem(unsigned int size)
     }
 
     ionAllocData.flags = 0;
-    ionAllocData.len = size;
+    ionAllocData.len = size * 2; // double buffer
     ionAllocData.align = sysconf(_SC_PAGESIZE);
     ionAllocData.heap_mask =
             ION_HEAP(ION_IOMMU_HEAP_ID) |
@@ -262,16 +263,17 @@ static int alloc_ion_mem(unsigned int size)
         free_ion_mem();
         return result;
     }
-    gr_draw.data = (unsigned char *)mmap(NULL, size, PROT_READ |
+    mem_info.mem_buf = (unsigned char *)mmap(NULL, size * 2, PROT_READ |
                 PROT_WRITE, MAP_SHARED, fd_data.fd, 0);
     mem_info.mem_fd = fd_data.fd;
 
-
-    if (!gr_draw.data) {
+    if (!mem_info.mem_buf) {
         perror("ERROR: ION MAP_FAILED ");
         free_ion_mem();
         return -ENOMEM;
     }
+
+    mem_info.offset = 0;
 
     return 0;
 }
@@ -288,13 +290,13 @@ static int allocate_overlay(int fd)
             memset(&overlayL, 0 , sizeof (struct mdp_overlay));
 
             /* Fill Overlay Data */
-            overlayL.src.width  = ALIGN(gr_draw.width, 32);
-            overlayL.src.height = gr_draw.height;
+            overlayL.src.width  = ALIGN(gr_draw->width, 32);
+            overlayL.src.height = gr_draw->height;
             overlayL.src.format = map_mdp_pixel_format();
-            overlayL.src_rect.w = gr_draw.width;
-            overlayL.src_rect.h = gr_draw.height;
-            overlayL.dst_rect.w = gr_draw.width;
-            overlayL.dst_rect.h = gr_draw.height;
+            overlayL.src_rect.w = gr_draw->width;
+            overlayL.src_rect.h = gr_draw->height;
+            overlayL.dst_rect.w = gr_draw->width;
+            overlayL.dst_rect.h = gr_draw->height;
             overlayL.alpha = 0xFF;
             overlayL.transp_mask = MDP_TRANSP_NOP;
             overlayL.id = MSMFB_NEW_REQUEST;
@@ -309,10 +311,10 @@ static int allocate_overlay(int fd)
         float xres = getFbXres();
         int lSplit = getLeftSplit();
         float lSplitRatio = lSplit / xres;
-        float lCropWidth = gr_draw.width * lSplitRatio;
+        float lCropWidth = gr_draw->width * lSplitRatio;
         int lWidth = lSplit;
-        int rWidth = gr_draw.width - lSplit;
-        int height = gr_draw.height;
+        int rWidth = gr_draw->width - lSplit;
+        int height = gr_draw->height;
 
         if (MSMFB_NEW_REQUEST == overlayL_id) {
 
@@ -321,13 +323,13 @@ static int allocate_overlay(int fd)
             memset(&overlayL, 0 , sizeof (struct mdp_overlay));
 
             /* Fill OverlayL Data */
-            overlayL.src.width  = ALIGN(gr_draw.width, 32);
-            overlayL.src.height = gr_draw.height;
+            overlayL.src.width  = ALIGN(gr_draw->width, 32);
+            overlayL.src.height = gr_draw->height;
             overlayL.src.format = map_mdp_pixel_format();
             overlayL.src_rect.x = 0;
             overlayL.src_rect.y = 0;
             overlayL.src_rect.w = lCropWidth;
-            overlayL.src_rect.h = gr_draw.height;
+            overlayL.src_rect.h = gr_draw->height;
             overlayL.dst_rect.x = 0;
             overlayL.dst_rect.y = 0;
             overlayL.dst_rect.w = lWidth;
@@ -348,13 +350,13 @@ static int allocate_overlay(int fd)
             memset(&overlayR, 0 , sizeof (struct mdp_overlay));
 
             /* Fill OverlayR Data */
-            overlayR.src.width  = ALIGN(gr_draw.width, 32);
-            overlayR.src.height = gr_draw.height;
+            overlayR.src.width  = ALIGN(gr_draw->width, 32);
+            overlayR.src.height = gr_draw->height;
             overlayR.src.format = map_mdp_pixel_format();
             overlayR.src_rect.x = lCropWidth;
             overlayR.src_rect.y = 0;
-            overlayR.src_rect.w = gr_draw.width - lCropWidth;
-            overlayR.src_rect.h = gr_draw.height;
+            overlayR.src_rect.w = gr_draw->width - lCropWidth;
+            overlayR.src_rect.h = gr_draw->height;
             overlayR.dst_rect.x = 0;
             overlayR.dst_rect.y = 0;
             overlayR.dst_rect.w = rWidth;
@@ -442,7 +444,7 @@ static int overlay_display_frame(int fd, size_t size)
 
         ovdataL.id = overlayL_id;
         ovdataL.data.flags = 0;
-        ovdataL.data.offset = 0;
+        ovdataL.data.offset = mem_info.offset;
         ovdataL.data.memory_id = mem_info.mem_fd;
         ret = ioctl(fd, MSMFB_OVERLAY_PLAY, &ovdataL);
         if (ret < 0) {
@@ -460,7 +462,7 @@ static int overlay_display_frame(int fd, size_t size)
 
         ovdataL.id = overlayL_id;
         ovdataL.data.flags = 0;
-        ovdataL.data.offset = 0;
+        ovdataL.data.offset = mem_info.offset;
         ovdataL.data.memory_id = mem_info.mem_fd;
         ret = ioctl(fd, MSMFB_OVERLAY_PLAY, &ovdataL);
         if (ret < 0) {
@@ -477,7 +479,7 @@ static int overlay_display_frame(int fd, size_t size)
 
         ovdataR.id = overlayR_id;
         ovdataR.data.flags = 0;
-        ovdataR.data.offset = 0;
+        ovdataR.data.offset = mem_info.offset;
         ovdataR.data.memory_id = mem_info.mem_fd;
         ret = ioctl(fd, MSMFB_OVERLAY_PLAY, &ovdataR);
         if (ret < 0) {
@@ -492,6 +494,9 @@ static int overlay_display_frame(int fd, size_t size)
     if (ret < 0) {
         perror("overlay_display_frame failed, overlay commit Failed\n!");
     }
+
+    mem_info.offset ^= size;
+    gr_draw->data = mem_info.mem_buf + mem_info.offset;
 
     return ret;
 }
@@ -549,6 +554,9 @@ static gr_surface overlay_init(minui_backend* backend)
         return NULL;
     }
 
+    if (isTargetMdp5())
+        setDisplaySplit();
+
     printf("fb0 reports (possibly inaccurate):\n"
            "  vi.bits_per_pixel = %d\n"
            "  vi.red.offset   = %3d   .length = %3d\n"
@@ -561,14 +569,16 @@ static gr_surface overlay_init(minui_backend* backend)
 
     fi.line_length = ALIGN(vi.xres, 32) * PIXEL_SIZE;
 
-    gr_draw.width = vi.xres;
-    gr_draw.height = vi.yres;
-    gr_draw.row_bytes = fi.line_length;
-    gr_draw.pixel_bytes = vi.bits_per_pixel / 8;
+    gr_draw = (GRSurface*) malloc(sizeof(GRSurface));
+
+    gr_draw->width = vi.xres;
+    gr_draw->height = vi.yres;
+    gr_draw->row_bytes = fi.line_length;
+    gr_draw->pixel_bytes = vi.bits_per_pixel / 8;
 
     fb_fd = fd;
 
-    printf("overlay: %d (%d x %d)\n", fb_fd, gr_draw.width, gr_draw.height);
+    printf("overlay: %d (%d x %d)\n", fb_fd, gr_draw->width, gr_draw->height);
 
     overlay_blank(backend, true);
     overlay_blank(backend, false);
@@ -576,18 +586,19 @@ static gr_surface overlay_init(minui_backend* backend)
     if (alloc_ion_mem(fi.line_length * vi.yres) || allocate_overlay(fb_fd))
         free_ion_mem();
 
-    return &gr_draw;
+    gr_draw->data = mem_info.mem_buf;
+    return gr_draw;
 }
 
 static gr_surface overlay_flip(minui_backend* backend __unused)
 {
-    if (overlay_display_frame(fb_fd, (gr_draw.row_bytes * gr_draw.height)) < 0) {
+    if (overlay_display_frame(fb_fd, (gr_draw->row_bytes * gr_draw->height)) < 0) {
         // Free and allocate overlay in failure case
         // so that next cycle can be retried
         free_overlay(fb_fd);
         allocate_overlay(fb_fd);
     }
-    return &gr_draw;
+    return gr_draw;
 }
 
 static void overlay_blank(minui_backend* backend __unused, bool blank) {
