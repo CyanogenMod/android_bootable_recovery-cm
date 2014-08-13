@@ -48,6 +48,8 @@
 #include "minui.h"
 #include "graphics.h"
 
+#ifdef MDSS_MDP_RIGHT_MIXER
+
 #define MDP_V4_0 400
 #define PIXEL_SIZE 4
 #define ALIGN(x, align) (((x) + ((align)-1)) & ~((align)-1))
@@ -97,8 +99,6 @@ static int map_mdp_pixel_format()
 
 #define MAX_DISPLAY_DIM  2048
 
-#ifdef MDSS_MDP_RIGHT_MIXER
-
 static int leftSplit = 0;
 static int rightSplit = 0;
 
@@ -147,13 +147,6 @@ static bool isDisplaySplit() {
     return false;
 }
 
-#else
-
-static bool isDisplaySplit() {
-    return false;
-}
-
-#endif
 
 static int getFbXres() {
     return vi.xres;
@@ -180,13 +173,7 @@ bool target_has_overlay()
     close(fd);
 
     if (len >= 8) {
-        if(!strncmp(version, "msmfb", strlen("msmfb"))) {
-            memcpy(str_ver, version + strlen("msmfb"), 3);
-            str_ver[3] = '\0';
-            if (atoi(str_ver) >= MDP_V4_0) {
-                ret = true;
-            }
-        } else if (!strncmp(version, "mdssfb", strlen("mdssfb"))) {
+        if (!strncmp(version, "mdssfb", strlen("mdssfb"))) {
             ret = true;
             isMDP5 = true;
         }
@@ -267,8 +254,9 @@ static int alloc_ion_mem(unsigned int size)
                 PROT_WRITE, MAP_SHARED, fd_data.fd, 0);
     mem_info.mem_fd = fd_data.fd;
 
-    if (!mem_info.mem_buf) {
+    if (mem_info.mem_buf == MAP_FAILED) {
         perror("ERROR: ION MAP_FAILED ");
+        mem_info.mem_buf = NULL;
         free_ion_mem();
         return -ENOMEM;
     }
@@ -308,7 +296,6 @@ static int allocate_overlay(int fd)
             overlayL_id = overlayL.id;
         }
     } else {
-#ifdef MDSS_MDP_RIGHT_MIXER
         float xres = getFbXres();
         int lSplit = getLeftSplit();
         float lSplitRatio = lSplit / xres;
@@ -373,7 +360,6 @@ static int allocate_overlay(int fd)
             }
             overlayR_id = overlayR.id;
         }
-#endif
     }
 
     return 0;
@@ -527,10 +513,8 @@ static gr_surface overlay_init(minui_backend* backend)
         return NULL;
     }
 
-#ifdef MDSS_MDP_RIGHT_MIXER
     if (isTargetMdp5())
         setDisplaySplit();
-#endif
 
     printf("fb0 reports (possibly inaccurate):\n"
            "  vi.bits_per_pixel = %d\n"
@@ -556,8 +540,10 @@ static gr_surface overlay_init(minui_backend* backend)
     overlay_blank(backend, true);
     overlay_blank(backend, false);
 
-    if (alloc_ion_mem(fi.line_length * vi.yres) || allocate_overlay(fb_fd))
+    if (alloc_ion_mem(fi.line_length * vi.yres) || allocate_overlay(fb_fd)) {
         free_ion_mem();
+        return NULL;
+    }
 
     gr_draw.data = mem_info.mem_buf;
     return &gr_draw;
@@ -590,3 +576,16 @@ static void overlay_exit(minui_backend* backend __unused) {
     close(fb_fd);
     fb_fd = -1;
 }
+
+#else
+
+bool target_has_overlay()
+{
+    return false;
+}
+
+minui_backend* open_overlay() {
+    return NULL;
+}
+
+#endif
