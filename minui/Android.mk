@@ -30,7 +30,10 @@ else
 endif
 
 ifneq ($(BOARD_USE_CUSTOM_RECOVERY_FONT),)
-  common_cflags += -DRECOVERY_FONT=$(BOARD_USE_CUSTOM_RECOVERY_FONT)
+# BOARD_USE_CUSTOM_RECOVERY_FONT can be defined by devices in any of the
+# following ways: [ := \"font.h\" ] [ := "font.h" ] [ := font.h ]
+# We correct quote surroundings here.
+  common_cflags += -DRECOVERY_FONT=\"$(subst $\\,,$(subst $\",,$(BOARD_USE_CUSTOM_RECOVERY_FONT)))\"
 endif
 
 

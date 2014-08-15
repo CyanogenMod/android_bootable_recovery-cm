@@ -30,7 +30,11 @@
 
 #include <time.h>
 
+#ifdef RECOVERY_FONT
+#include RECOVERY_FONT
+#else
 #include "roboto_23x41.h"
+#endif
 #include "minui.h"
 #include "graphics.h"
 
@@ -327,15 +331,22 @@ static void gr_init_one_font(int idx)
     snprintf(name, sizeof(name), "font_%s", gr_fonts[idx].name);
     gr_fonts[idx].font = gr_font;
 
+    int force_compiled_font = 0;
+#ifdef RECOVERY_FONT
+    force_compiled_font = 1;
+#endif
+
     int res = res_create_alpha_surface(name, &(gr_font->texture));
-    if (res == 0) {
+    if (res == 0 && !force_compiled_font) {
         // The font image should be a 96x2 array of character images.  The
         // columns are the printable ASCII characters 0x20 - 0x7f.  The
         // top row is regular text; the bottom row is bold.
         gr_font->cwidth = gr_font->texture->width / 96;
         gr_font->cheight = gr_font->texture->height / 2;
     } else {
+#ifndef RECOVERY_FONT
         printf("failed to read font: res=%d\n", res);
+#endif
 
         // fall back to the compiled-in font.
         gr_font->texture = malloc(sizeof(*gr_font->texture));
