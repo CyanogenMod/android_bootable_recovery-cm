@@ -11,7 +11,7 @@ common_c_includes := \
 ifeq ($(call is-vendor-board-platform,QCOM),true)
   common_additional_dependencies := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
   common_c_includes += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
-  common_src_files += graphics_overlay.c
+  common_src_files += graphics_overlay.c vsync.c
   common_cflags += -DMSMFB_OVERLAY
 endif
 
