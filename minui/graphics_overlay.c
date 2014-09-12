@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014, The CyanogenMod Project
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -47,6 +48,7 @@
 
 #include "minui.h"
 #include "graphics.h"
+#include "vsync.h"
 
 #ifdef MDSS_MDP_RIGHT_MIXER
 
@@ -80,10 +82,14 @@ typedef struct {
     int offset;
 } ion_mem_info;
 
+// double buffer
+#define NUM_BUFFERS 2
+static ion_mem_info mem_info[NUM_BUFFERS];
+static int cur_buf = 0;
+
 //Left and right overlay id
 static int overlayL_id = MSMFB_NEW_REQUEST;
 static int overlayR_id = MSMFB_NEW_REQUEST;
-static ion_mem_info mem_info;
 static bool isMDP5 = false;
 
 static int map_mdp_pixel_format()
@@ -194,74 +200,84 @@ static bool isTargetMdp5() {
 }
 
 static int free_ion_mem(void) {
-    int ret = 0;
+    int ret = 0, i = 0;
 
-    if (mem_info.mem_buf)
-        munmap(mem_info.mem_buf, mem_info.size);
+    for (i = 0; i < NUM_BUFFERS; i++) {
+        if (mem_info[i].mem_buf)
+            munmap(mem_info[i].mem_buf, mem_info[i].size);
 
-    if (mem_info.ion_fd >= 0) {
-        ret = ioctl(mem_info.ion_fd, ION_IOC_FREE, &mem_info.handle_data);
-        if (ret < 0)
-            perror("free_mem failed ");
+        if (mem_info[i].ion_fd >= 0) {
+            ret = ioctl(mem_info[i].ion_fd, ION_IOC_FREE, &mem_info[i].handle_data);
+            if (ret < 0) {
+                perror("free_mem failed ");
+                continue;
+            }
+        }
+
+        if (mem_info[i].mem_fd >= 0)
+            close(mem_info[i].mem_fd);
+        if (mem_info[i].ion_fd >= 0)
+            close(mem_info[i].ion_fd);
+
+        memset(&mem_info[i], 0, sizeof(ion_mem_info));
+        mem_info[i].mem_fd = -1;
+        mem_info[i].ion_fd = -1;
     }
-
-    if (mem_info.mem_fd >= 0)
-        close(mem_info.mem_fd);
-    if (mem_info.ion_fd >= 0)
-        close(mem_info.ion_fd);
-
-    memset(&mem_info, 0, sizeof(mem_info));
-    mem_info.mem_fd = -1;
-    mem_info.ion_fd = -1;
     return 0;
 }
 
 static int alloc_ion_mem(unsigned int size)
 {
-    int result;
+    int result = 0, i = 0;
     struct ion_fd_data fd_data;
     struct ion_allocation_data ionAllocData;
 
-    mem_info.ion_fd = open("/dev/ion", O_RDWR|O_DSYNC);
-    if (mem_info.ion_fd < 0) {
-        perror("ERROR: Can't open ion ");
-        return -errno;
-    }
-
     ionAllocData.flags = 0;
-    ionAllocData.len = size * 2; // double buffer
+    ionAllocData.len = size;
     ionAllocData.align = sysconf(_SC_PAGESIZE);
     ionAllocData.heap_mask =
             ION_HEAP(ION_IOMMU_HEAP_ID) |
             ION_HEAP(ION_SYSTEM_HEAP_ID);
 
-    result = ioctl(mem_info.ion_fd, ION_IOC_ALLOC,  &ionAllocData);
-    if(result){
-        perror("ION_IOC_ALLOC Failed ");
-        close(mem_info.ion_fd);
-        return result;
-    }
+    for (i = 0; i < NUM_BUFFERS; i++) {
+        mem_info[i].ion_fd = open("/dev/ion", O_RDWR|O_DSYNC);
+        if (mem_info[i].ion_fd < 0) {
+            perror("ERROR: Can't open ion ");
+            return -errno;
+        }
 
-    fd_data.handle = ionAllocData.handle;
-    mem_info.handle_data.handle = ionAllocData.handle;
-    result = ioctl(mem_info.ion_fd, ION_IOC_MAP, &fd_data);
-    if (result) {
-        perror("ION_IOC_MAP Failed ");
-        free_ion_mem();
-        return result;
-    }
-    mem_info.mem_buf = (unsigned char *)mmap(NULL, size * 2, PROT_READ |
-                PROT_WRITE, MAP_SHARED, fd_data.fd, 0);
-    mem_info.mem_fd = fd_data.fd;
+        printf("%s: ion_fd=%d\n", __func__, mem_info[i].ion_fd);
 
-    if (mem_info.mem_buf == MAP_FAILED) {
-        perror("ERROR: ION MAP_FAILED ");
-        mem_info.mem_buf = NULL;
-        free_ion_mem();
-        return -ENOMEM;
-    }
+        result = ioctl(mem_info[i].ion_fd, ION_IOC_ALLOC,  &ionAllocData);
+        if(result){
+            perror("ION_IOC_ALLOC Failed ");
+            close(mem_info[i].ion_fd);
+            return result;
+        }
 
-    mem_info.offset = 0;
+        fd_data.handle = ionAllocData.handle;
+        mem_info[i].handle_data.handle = ionAllocData.handle;
+        result = ioctl(mem_info[i].ion_fd, ION_IOC_MAP, &fd_data);
+        if (result) {
+            perror("ION_IOC_MAP Failed ");
+            free_ion_mem();
+            return result;
+        }
+        mem_info[i].mem_buf = (unsigned char *)mmap(NULL, size, PROT_READ |
+                    PROT_WRITE, MAP_SHARED, fd_data.fd, 0);
+        mem_info[i].mem_fd = fd_data.fd;
+
+        if (mem_info[i].mem_buf == MAP_FAILED) {
+            perror("ERROR: ION MAP_FAILED ");
+            mem_info[i].mem_buf = NULL;
+            free_ion_mem();
+            return -ENOMEM;
+        }
+
+        printf("%s: ion_fd=%d mem_fd=%d buf=%p\n", __func__, mem_info[i].ion_fd,
+                mem_info[i].mem_fd, mem_info[i].mem_buf);
+        mem_info[i].offset = 0;
+    }
 
     return 0;
 }
@@ -290,7 +306,7 @@ static int allocate_overlay(int fd)
             overlayL.id = MSMFB_NEW_REQUEST;
             ret = ioctl(fd, MSMFB_OVERLAY_SET, &overlayL);
             if (ret < 0) {
-                perror("Overlay Set Failed");
+                perror("Overlay Set Failed \n");
                 return ret;
             }
             overlayL_id = overlayL.id;
@@ -401,7 +417,6 @@ static int free_overlay(int fd)
     }
     memset(&ext_commit, 0, sizeof(struct mdp_display_commit));
     ext_commit.flags = MDP_DISPLAY_COMMIT_OVERLAY;
-    ext_commit.wait_for_finish = 1;
     ret = ioctl(fd, MSMFB_DISPLAY_COMMIT, &ext_commit);
     if (ret < 0) {
         perror("ERROR: Clear MSMFB_DISPLAY_COMMIT failed!");
@@ -431,8 +446,9 @@ static int overlay_display_frame(int fd, size_t size)
 
         ovdataL.id = overlayL_id;
         ovdataL.data.flags = 0;
-        ovdataL.data.offset = mem_info.offset;
-        ovdataL.data.memory_id = mem_info.mem_fd;
+        ovdataL.data.offset = mem_info[cur_buf].offset;
+        ovdataL.data.memory_id = mem_info[cur_buf].mem_fd;
+
         ret = ioctl(fd, MSMFB_OVERLAY_PLAY, &ovdataL);
         if (ret < 0) {
             perror("overlay_display_frame failed, overlay play Failed\n");
@@ -449,8 +465,9 @@ static int overlay_display_frame(int fd, size_t size)
 
         ovdataL.id = overlayL_id;
         ovdataL.data.flags = 0;
-        ovdataL.data.offset = mem_info.offset;
-        ovdataL.data.memory_id = mem_info.mem_fd;
+        ovdataL.data.offset = mem_info[cur_buf].offset;
+        ovdataL.data.memory_id = mem_info[cur_buf].mem_fd;
+
         ret = ioctl(fd, MSMFB_OVERLAY_PLAY, &ovdataL);
         if (ret < 0) {
             perror("overlay_display_frame failed, overlayL play Failed\n");
@@ -466,25 +483,28 @@ static int overlay_display_frame(int fd, size_t size)
 
         ovdataR.id = overlayR_id;
         ovdataR.data.flags = 0;
-        ovdataR.data.offset = mem_info.offset;
-        ovdataR.data.memory_id = mem_info.mem_fd;
+        ovdataR.data.offset = mem_info[cur_buf].offset;
+        ovdataR.data.memory_id = mem_info[cur_buf].mem_fd;
         ret = ioctl(fd, MSMFB_OVERLAY_PLAY, &ovdataR);
         if (ret < 0) {
             perror("overlay_display_frame failed, overlayR play Failed\n");
             return ret;
         }
     }
+
     memset(&ext_commit, 0, sizeof(struct mdp_display_commit));
     ext_commit.flags = MDP_DISPLAY_COMMIT_OVERLAY;
-    ext_commit.wait_for_finish = 1;
     ret = ioctl(fd, MSMFB_DISPLAY_COMMIT, &ext_commit);
     if (ret < 0) {
         perror("overlay_display_frame failed, overlay commit Failed\n!");
+        goto done;
     }
 
-    mem_info.offset ^= size;
-    gr_draw.data = mem_info.mem_buf + mem_info.offset;
+    // swap to next buffer
+    cur_buf ^= 1;
+    gr_draw.data = mem_info[cur_buf].mem_buf;
 
+done:
     return ret;
 }
 
@@ -545,12 +565,16 @@ static gr_surface overlay_init(minui_backend* backend)
         return NULL;
     }
 
-    gr_draw.data = mem_info.mem_buf;
+    vsync_init(fd);
+
+    gr_draw.data = mem_info[cur_buf].mem_buf;
     return &gr_draw;
 }
 
 static gr_surface overlay_flip(minui_backend* backend __unused)
 {
+    wait_for_vsync();
+
     if (overlay_display_frame(fb_fd, (gr_draw.row_bytes * gr_draw.height)) < 0) {
         // Free and allocate overlay in failure case
         // so that next cycle can be retried
