@@ -366,7 +366,7 @@ void ScreenRecoveryUI::update_screen_locked()
 // Should only be called with updateMutex locked.
 void ScreenRecoveryUI::update_progress_locked()
 {
-    if (show_text || !pagesIdentical) {
+    if (!pagesIdentical) {
         draw_screen_locked();    // Must redraw the whole screen
         pagesIdentical = true;
     } else {
@@ -392,7 +392,7 @@ void ScreenRecoveryUI::progress_loop() {
         // update the installation animation, if active
         // skip this if we have a text overlay (too expensive to update)
         if ((currentIcon == INSTALLING_UPDATE || currentIcon == ERASING) &&
-            installing_frames > 0 && !show_text) {
+            installing_frames > 0) {
             installingFrame = (installingFrame + 1) % installing_frames;
             redraw = 1;
         }
@@ -412,11 +412,16 @@ void ScreenRecoveryUI::progress_loop() {
         if (redraw) update_progress_locked();
 
         pthread_mutex_unlock(&updateMutex);
+
+        if (progressBarType == EMPTY)
+            break;
+
         double end = now();
         // minimum of 20ms delay between frames
         double delay = interval - (end-start);
         if (delay < 0.02) delay = 0.02;
         usleep((long)(delay * 1000000));
+
     }
 }
 
@@ -489,8 +494,6 @@ void ScreenRecoveryUI::Init()
     LoadLocalizedBitmap("no_command_text", &backgroundText[NO_COMMAND]);
     LoadLocalizedBitmap("error_text", &backgroundText[ERROR]);
 
-    pthread_create(&progress_t, NULL, progress_thread, NULL);
-
     RecoveryUI::Init();
 }
 
@@ -548,6 +551,9 @@ void ScreenRecoveryUI::SetProgressType(ProgressType type)
     pthread_mutex_lock(&updateMutex);
     if (progressBarType != type) {
         progressBarType = type;
+        if (progressBarType != EMPTY) {
+            pthread_create(&progress_t, NULL, progress_thread, NULL);
+        }
     }
     progressScopeStart = 0;
     progressScopeSize = 0;
