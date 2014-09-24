@@ -688,9 +688,15 @@ void RecoveryUI::handle_release(input_device* dev) {
         }
     }
     else {
-        int sel;
-        sel = (dev->touch_pos.y - MenuItemStart())/MenuItemHeight();
-        EnqueueKey(KEY_FLAG_ABS | sel);
+        int sel, start_menu_pos;
+        // Make sure touch pos is not less than menu start pos.
+        // No need to check if beyond end of menu items, since
+        // that is checked by get_menu_selection().
+        start_menu_pos = MenuItemStart();
+        if (dev->touch_pos.y >= start_menu_pos) {
+            sel = (dev->touch_pos.y - start_menu_pos)/MenuItemHeight();
+            EnqueueKey(KEY_FLAG_ABS | sel);
+        }
     }
 }
 
