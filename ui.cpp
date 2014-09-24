@@ -710,7 +710,8 @@ void RecoveryUI::handle_gestures(input_device* dev) {
             dev->in_swipe = true;
             if (!DialogShowing()) {
                 dev->touch_track = dev->touch_pos;
-                int key = (diff.y < 0) ? KEY_VOLUMEUP : KEY_VOLUMEDOWN;
+                // inject KEY_K/KEY_J keycode for swipe up/down
+                int key = (diff.y < 0) ? KEY_K : KEY_J;
                 process_key(dev, key, 1);
                 process_key(dev, key, 0);
             }

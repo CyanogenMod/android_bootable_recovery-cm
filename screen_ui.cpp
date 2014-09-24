@@ -698,7 +698,7 @@ void ScreenRecoveryUI::StartMenu(const char* const * headers, const char* const 
     pthread_mutex_unlock(&updateMutex);
 }
 
-int ScreenRecoveryUI::SelectMenu(int sel, bool abs) {
+int ScreenRecoveryUI::SelectMenu(int sel, bool abs, bool nowrap) {
     int old_sel;
     pthread_mutex_lock(&updateMutex);
     if (abs) {
@@ -707,8 +707,19 @@ int ScreenRecoveryUI::SelectMenu(int sel, bool abs) {
     if (show_menu > 0) {
         old_sel = menu_sel;
         menu_sel = sel;
-        if (menu_sel < 0) menu_sel = menu_items + menu_sel;
-        if (menu_sel >= menu_items) menu_sel = menu_sel - menu_items;
+        if (nowrap) {
+            if (menu_sel < 0) {
+                menu_sel = 0;
+            } else if (menu_sel >= menu_items) {
+                menu_sel = menu_items - 1;
+            }
+        } else {
+            if (menu_sel < 0) {
+                menu_sel = menu_items + menu_sel;
+            } else if (menu_sel >= menu_items) {
+                menu_sel = menu_sel - menu_items;
+            }
+        }
         if (menu_sel < menu_show_start && menu_show_start > 0) {
             menu_show_start = menu_sel;
         }

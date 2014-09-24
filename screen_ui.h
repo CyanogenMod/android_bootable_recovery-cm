@@ -61,7 +61,7 @@ class ScreenRecoveryUI : public RecoveryUI {
     virtual int MenuItemHeight() const { return 3*char_height; }
     void StartMenu(const char* const * headers, const char* const * items,
                            int initial_selection);
-    int SelectMenu(int sel, bool abs = false);
+    int SelectMenu(int sel, bool abs = false, bool nowrap = false);
     void EndMenu();
 
     void Redraw();

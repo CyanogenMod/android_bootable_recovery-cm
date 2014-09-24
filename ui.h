@@ -184,7 +184,7 @@ class RecoveryUI {
 
     // Set the menu highlight to the given index, and return it (capped to
     // the range [0..numitems).
-    virtual int SelectMenu(int sel, bool abs = false) = 0;
+    virtual int SelectMenu(int sel, bool abs = false, bool nowrap = false) = 0;
 
     // End menu mode, resetting the text overlay so that ui_print()
     // statements will be displayed.

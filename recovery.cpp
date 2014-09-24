@@ -665,6 +665,14 @@ get_menu_selection(const char* const * headers, const char* const * items,
                     ++selected;
                     selected = ui->SelectMenu(selected);
                     break;
+                case Device::kHighlightUpNoWrap:
+                    --selected;
+                    selected = ui->SelectMenu(selected, false, true);
+                    break;
+                case Device::kHighlightDownNoWrap:
+                    ++selected;
+                    selected = ui->SelectMenu(selected, false, true);
+                    break;
                 case Device::kInvokeItem:
                     chosen_item = selected;
                     break;
