@@ -1370,9 +1370,23 @@ main(int argc, char **argv) {
 #endif
     if (update_package != NULL) {
         status = install_package(update_package, &wipe_cache, TEMPORARY_INSTALL_FILE);
-        if (status == INSTALL_SUCCESS && wipe_cache) {
-            if (erase_volume("/cache")) {
-                LOGE("Cache wipe (requested by package) failed.");
+        if (status == INSTALL_SUCCESS) {
+            if (wipe_data) {
+                if (device->WipeData()) status = INSTALL_ERROR;
+                if (erase_volume("/data", wipe_media)) status = INSTALL_ERROR;
+                if (status != INSTALL_SUCCESS) {
+                    ui->Print("Data wipe (requested by package) failed.\n");
+                }
+            } else if (wipe_media) {
+                if (erase_volume("media")) status = INSTALL_ERROR;
+                if (status != INSTALL_SUCCESS) {
+                    ui->Print("Media wipe (requested by package) failed.\n");
+                }
+            }
+            if (wipe_cache) {
+                if (erase_volume("/cache")) {
+                    LOGE("Cache wipe (requested by package) failed.");
+                }
             }
         }
         if (status != INSTALL_SUCCESS) {
