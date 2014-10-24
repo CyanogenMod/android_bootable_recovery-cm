@@ -288,4 +288,40 @@ include $(LOCAL_PATH)/minui/Android.mk \
     $(LOCAL_PATH)/applypatch/Android.mk \
     $(LOCAL_PATH)/voldclient/Android.mk
 
+# All LOCAL_MODULES declared by recovery
+RECOVERY_MODULES := \
+    add-property-tag \
+    applypatch \
+    applypatch_static \
+    bu_recovery \
+    check-lost+found \
+    edify \
+    flash_image \
+    imgdiff \
+    libapplypatch \
+    libedify \
+    libmake_ext4fs_static \
+    libminadbd \
+    libminelf \
+    libminizip_static \
+    libminui \
+    libminzip \
+    libmtdutils \
+    libreboot_static \
+    libverifier \
+    libvoldclient \
+    recovery \
+    updater \
+    verifier_test
+
+# Anything that depends on recovery headers or libs
+# mgrep "project-path-for.*recovery"
+RECOVERY_MODULES += \
+    charger
+
+clean_RECOVERY_MODULES := $(foreach RECOVERY_MODULE,$(RECOVERY_MODULES),clean-$(RECOVERY_MODULE))
+
+switch-recovery: $(clean_RECOVERY_MODULES)
+	@echo -e "Note: You need to rebuild libminui (mmm mka -B $(call project-path-for,recovery)/minui/)"
+
 endif
