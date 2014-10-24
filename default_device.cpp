@@ -27,11 +27,11 @@ static const char* HEADERS[] = { "Swipe up/down to change selections;",
                                  "",
                                  NULL };
 
-static const char* ITEMS[] =  {"reboot system now",
-                               "apply update",
-                               "wipe data/factory reset",
-                               "wipe cache partition",
-                               "wipe media",
+static const char* ITEMS[] = { "Reboot system now",
+                               "Apply update",
+                               "Wipe data/factory reset",
+                               "Wipe cache partition",
+                               "Wipe media",
                                NULL };
 
 class DefaultUI : public ScreenRecoveryUI {
