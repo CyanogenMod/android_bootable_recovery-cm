@@ -289,3 +289,35 @@ include $(LOCAL_PATH)/minui/Android.mk \
     $(LOCAL_PATH)/voldclient/Android.mk
 
 endif
+
+RECOVERY_MODULES := \
+    add-property-tag \
+    applypatch \
+    applypatch_static \
+    bu_recovery \
+    check-lost+found \
+    edify \
+    flash_image \
+    imgdiff \
+    libapplypatch \
+    libedify \
+    libmake_ext4fs_static \
+    libminadbd \
+    libminelf \
+    libminizip_static \
+    libminui \
+    libminzip \
+    libmtdutils \
+    libreboot_static \
+    libverifier \
+    libvoldclient \
+    recovery \
+    updater \
+    verifier_test
+
+RECOVERY_MODULES += \
+    charger
+
+clean_RECOVERY_MODULES := $(foreach RECOVERY_MODULE,$(RECOVERY_MODULES),clean-$(RECOVERY_MODULE))
+
+switch-recovery: $(clean_RECOVERY_MODULES)
