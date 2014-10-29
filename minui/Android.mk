@@ -33,9 +33,11 @@ ifneq ($(BOARD_USE_CUSTOM_RECOVERY_FONT),)
   common_cflags += -DRECOVERY_FONT=$(BOARD_USE_CUSTOM_RECOVERY_FONT)
 endif
 
+common_cflags += -ftree-vectorize -fprefetch-loop-arrays
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libminui
+LOCAL_ARM_MODE := arm
 LOCAL_SRC_FILES := $(common_src_files)
 LOCAL_ADDITIONAL_DEPENDENCIES := $(common_additional_dependencies)
 LOCAL_C_INCLUDES := $(common_c_includes)

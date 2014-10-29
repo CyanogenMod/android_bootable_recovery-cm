@@ -25,6 +25,26 @@
 extern "C" {
 #endif
 
+#ifndef LOGE
+#define LOGE(...) fprintf(stderr, "E:" __VA_ARGS__)
+#endif
+#ifndef LOGV
+#define LOGW(...) fprintf(stdout, "W:" __VA_ARGS__)
+#endif
+#ifndef LOGI
+#define LOGI(...) fprintf(stdout, "I:" __VA_ARGS__)
+#endif
+#ifndef LOGD
+#define LOGD(...) fprintf(stdout, "D:" __VA_ARGS__)
+#endif
+#ifndef LOGV
+#ifdef DEBUG
+#define LOGV(...) fprintf(stdout, "V:" __VA_ARGS__)
+#else
+#define LOGV(...) do {} while (0)
+#endif
+#endif
+
 typedef struct {
     int width;
     int height;
