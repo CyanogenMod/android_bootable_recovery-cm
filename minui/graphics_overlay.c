@@ -443,8 +443,6 @@ static int overlay_display_frame(int num)
     struct mdp_display_commit ext_commit;
     size_t size = gr_draw.row_bytes * gr_draw.height;
 
-    printf("%s: fd=%d num=%d\n", __func__, fb_fd, num);
-
     if (!isDisplaySplit()) {
         if (overlayL_id == MSMFB_NEW_REQUEST) {
             perror("display_frame failed, no overlay\n");
@@ -519,8 +517,6 @@ static void *overlay_commit_thread(void *data)
     while (true) {
 
         sem_wait(&overlay_commit_sem);
-
-        printf("%s: frame=%d\n", __func__, frame);
 
         wait_for_vsync();
 
@@ -617,8 +613,6 @@ static gr_surface overlay_flip(minui_backend* backend __unused)
 
     sem_getvalue(&overlay_flip_sem, &avail);
     sem_getvalue(&overlay_commit_sem, &num);
-
-    printf("%s: flip_sem=%d commit_sem=%d next_buf=%d\n", __func__, avail, num, next_buf);
 
     // wait for a free buffer
     sem_wait(&overlay_flip_sem);
