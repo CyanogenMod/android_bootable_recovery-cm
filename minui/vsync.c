@@ -40,9 +40,12 @@
 #include <linux/ioctl.h>
 #include <linux/msm_mdp.h>
 
+#define USEC_PER_SEC    (1000*1000)
+#define NSEC_PER_SEC    (1000*USEC_PER_SEC)
+
 #define FB_NUM 0
 #define VSYNC_PREFIX "VSYNC="
-#define VSYNC_TIMEOUT_NS (60000 * 1000)
+#define VSYNC_TIMEOUT_NS (60 * 1000 * 1000)
 
 static pthread_cond_t vsync;
 static pthread_mutex_t vsync_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -51,12 +54,36 @@ static struct timespec vsync_time;
 
 static int fb_fd = -1;
 
+static struct timespec ts_add_nsec(struct timespec* lhs, long nsec)
+{
+    struct timespec result = *lhs;
+    result.tv_sec = lhs->tv_sec + (nsec / NSEC_PER_SEC);
+    result.tv_nsec = lhs->tv_nsec + (nsec % NSEC_PER_SEC);
+    if (result.tv_nsec >= NSEC_PER_SEC) {
+        result.tv_sec++;
+        result.tv_nsec -= NSEC_PER_SEC;
+    }
+    return result;
+}
+
+static struct timespec ts_sub(struct timespec* lhs, struct timespec* rhs)
+{
+    struct timespec result;
+    result.tv_sec = lhs->tv_sec - rhs->tv_sec;
+    result.tv_nsec = lhs->tv_nsec - rhs->tv_nsec;
+    if (result.tv_nsec < 0) {
+        result.tv_sec--;
+        result.tv_nsec += NSEC_PER_SEC;
+    }
+    return result;
+}
+
 static int vsync_control(int enable)
 {
     int ret = 0;
 
     // save the time so we can turn off the interrupt when idle
-    clock_gettime(CLOCK_REALTIME, &vsync_time);
+    clock_gettime(CLOCK_MONOTONIC, &vsync_time);
 
     if (vsync_enabled != enable) {
         if (fb_fd <= 0 || ioctl(fb_fd, MSMFB_OVERLAY_VSYNC_CTRL, &enable) < 0) {
@@ -76,7 +103,7 @@ static void *vsync_loop(void *data)
     char vdata[64];
     int fd = -1;
     int err = 0, len = 0;
-    struct timespec now;
+    struct timespec now, diff;
     struct pollfd pfd;
 
     snprintf(vsync_node_path, sizeof(vsync_node_path),
@@ -97,6 +124,9 @@ static void *vsync_loop(void *data)
     // loop forever until sysfs wakes us up
     while (true) {
         err = poll(&pfd, 1, -1);
+        if (err <= 0) {
+            continue;
+        }
 
         if (pfd.revents & POLLPRI) {
             len = pread(pfd.fd, vdata, 64, 0);
@@ -111,9 +141,10 @@ static void *vsync_loop(void *data)
         }
 
         // turn of the interrupt when we're not drawing
-        clock_gettime(CLOCK_REALTIME, &now);
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        diff = ts_sub(&now, &vsync_time);
 
-        if ((now.tv_nsec - vsync_time.tv_nsec) > VSYNC_TIMEOUT_NS) {
+        if (diff.tv_sec > 0 || (diff.tv_nsec > VSYNC_TIMEOUT_NS)) {
             vsync_control(0);
         }
     }
@@ -121,19 +152,17 @@ static void *vsync_loop(void *data)
 
 void wait_for_vsync()
 {
-    static struct timespec ts;
-    static struct timeval now;
+    static struct timespec now, timeout;
     int ret = 0;
 
     vsync_control(1);
 
-    gettimeofday(&now, NULL);
-    ts.tv_sec = now.tv_sec;
-    ts.tv_nsec = (now.tv_usec * 1000) + (20 * 1000 * 1000);
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    timeout = ts_add_nsec(&now, 20 * 1000 * 1000);
 
     // vsync_loop will let us know when to proceed
     pthread_mutex_lock(&vsync_lock);
-    pthread_cond_timedwait(&vsync, &vsync_lock, &ts);
+    pthread_cond_timedwait(&vsync, &vsync_lock, &timeout);
     pthread_mutex_unlock(&vsync_lock);
 }
 
