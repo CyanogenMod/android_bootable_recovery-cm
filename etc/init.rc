@@ -89,7 +89,7 @@ service setup_adbd /sbin/setup_adbd
     oneshot
     disabled
 
-service adbd /sbin/adbd --root_seclabel=u:r:su:s0 --device_banner=recovery
+service adbd /sbin/adbd recovery
     disabled
     socket adbd stream 660 system system
     seclabel u:r:adbd:s0
