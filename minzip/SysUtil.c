@@ -103,7 +103,7 @@ static int sysMapBlockFile(FILE* mapf, MemMapping* pMap)
         }
     }
 
-    if (fscanf(mapf, "%d %d\n%d\n", &size, &blksize, &range_count) != 3) {
+    if (fscanf(mapf, "%zu %u\n%u\n", &size, &blksize, &range_count) != 3) {
         LOGW("failed to parse block map header\n");
         return -1;
     }
@@ -116,7 +116,7 @@ static int sysMapBlockFile(FILE* mapf, MemMapping* pMap)
 
     // Reserve enough contiguous address space for the whole file.
     unsigned char* reserve;
-    reserve = mmap(NULL, blocks * blksize, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    reserve = mmap64(NULL, blocks * blksize, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
     if (reserve == MAP_FAILED) {
         LOGW("failed to reserve address space: %s\n", strerror(errno));
         return -1;
@@ -139,7 +139,7 @@ static int sysMapBlockFile(FILE* mapf, MemMapping* pMap)
             return -1;
         }
 
-        void* addr = mmap(next, (end-start)*blksize, PROT_READ, MAP_PRIVATE | MAP_FIXED, fd, ((off64_t)start)*blksize);
+        void* addr = mmap64(next, (end-start)*blksize, PROT_READ, MAP_PRIVATE | MAP_FIXED, fd, ((off64_t)start)*blksize);
         if (addr == MAP_FAILED) {
             LOGW("failed to map block %d: %s\n", i, strerror(errno));
             return -1;
@@ -152,6 +152,8 @@ static int sysMapBlockFile(FILE* mapf, MemMapping* pMap)
 
     pMap->addr = reserve;
     pMap->length = size;
+
+    LOGI("mmapped %d ranges\n", range_count);
 
     return 0;
 }
